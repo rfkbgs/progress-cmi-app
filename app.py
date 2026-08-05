@@ -37,9 +37,7 @@ if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
 
 st.divider()
 
-# 4. Baca Data dari Google Sheets
-# PENTING: header=2 digunakan agar Python membaca Baris ke-3 Excel sebagai nama kolom
-# (karena indeks Python mulai dari 0 -> 0=Baris 1, 1=Baris 2, 2=Baris 3)
+# 4. Baca Data dari Google Sheets (header=2 agar melewati baris merged di atasnya)
 try:
     with st.spinner(f"Mengambil data dari tab '{tab_terpilih}'..."):
         df = conn.read(worksheet=tab_terpilih, ttl=0, header=2)
@@ -47,52 +45,107 @@ except Exception as e:
     st.error(f"❌ Gagal membaca tab **'{tab_terpilih}'**: {e}")
     st.stop()
 
-# 5. Fitur Pencarian / Filter Cepat
-st.subheader(f"📝 Edit Data: Tab [{tab_terpilih}]")
+# ==========================================================
+# 📱 FITUR EDIT CEPAT KHUSUS HP (TANPA SCROLL HORIZONTAL)
+# ==========================================================
+with st.expander("📱 Fitur Edit Cepat Khusus HP (Klik untuk Buka/Tutup)", expanded=True):
+    st.write("💡 **Cara Cepat Update Data di HP:**")
+    
+    # Buat daftar pilihan baris berdasarkan 3 kolom pertama (biasanya NO, Site ID, Site Name)
+    pilihan_baris = []
+    for idx, row in df.iterrows():
+        info_baris = " | ".join([str(val) for val in row.iloc[:3] if pd.notna(val) and str(val).strip() != ""])
+        if not info_baris:
+            info_baris = f"Baris {idx + 1}"
+        pilihan_baris.append((idx, info_baris))
+    
+    # 1. Pilih Site / Baris
+    idx_terpilih, label_site = st.selectbox(
+        "🔍 1. Cari & Pilih Site:",
+        options=pilihan_baris,
+        format_func=lambda x: x[1],
+        key="hp_select_site"
+    )
+    
+    # 2. Pilih Kolom Target (Bisa pilih 1 atau beberapa kolom sekaligus!)
+    kolom_terpilih = st.multiselect(
+        "🎯 2. Pilih Kolom yang Mau Diubah (misal: Start Dismantle):",
+        options=list(df.columns),
+        placeholder="Klik di sini & pilih nama kolom..."
+    )
+    
+    # 3. Munculkan Input Box KHUSUS untuk kolom yang dipilih saja
+    if kolom_terpilih:
+        st.write("✏️ **3. Masukkan Nilai Baru:**")
+        nilai_baru_dict = {}
+        
+        for col in kolom_terpilih:
+            val_lama = df.at[idx_terpilih, col]
+            val_lama_str = "" if pd.isna(val_lama) else str(val_lama)
+            
+            nilai_baru_dict[col] = st.text_input(
+                label=f"Kolom [{col}]  —  (Nilai saat ini: {val_lama_str})",
+                value=val_lama_str,
+                key=f"hp_input_{col}"
+            )
+        
+        st.write("") # Spasi
+        # 4. Tombol Simpan Edit Cepat
+        if st.button("⚡ Simpan Edit Cepat ke Google Sheets", type="primary", use_container_width=True):
+            try:
+                with st.spinner("Menyimpan ke Google Sheets..."):
+                    for col, val in nilai_baru_dict.items():
+                        df.at[idx_terpilih, col] = val
+                    
+                    conn.update(worksheet=tab_terpilih, data=df)
+                    st.success(f"✅ Berhasil memperbarui data untuk: **{label_site}**!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"❌ Gagal menyimpan: {e}")
+    else:
+        st.caption("👈 *Pilih minimal 1 kolom di atas agar kotak input nilai baru muncul.*")
 
-col_search, col_reset = st.columns([4, 1])
+st.divider()
+
+# ==========================================================
+# 📋 TABEL LENGKAP (SPREADSHEET EDITOR) + FILTER
+# ==========================================================
+st.subheader(f"📋 Tabel Data: Tab [{tab_terpilih}]")
+
+col_search, _ = st.columns([4, 1])
 with col_search:
     keyword = st.text_input(
-        "🔍 Cari Site ID / Nama Site / kata kunci lain (opsional):",
+        "🔍 Filter Tabel (Cari Site ID / Nama):",
         placeholder="Contoh: R1200302 / BANGUN PURBA / JAILOLO"
     )
 
-# Filter dataframe jika ada kata kunci pencarian
 if keyword:
-    mask = df.astype(str).apply(
-        lambda x: x.str.contains(keyword, case=False, na=False)
-    ).any(axis=1)
+    mask = df.astype(str).apply(lambda x: x.str.contains(keyword, case=False, na=False)).any(axis=1)
     df_display = df[mask]
     st.caption(f"Menampilkan **{len(df_display)}** baris yang cocok dengan kata kunci **'{keyword}'**.")
 else:
     df_display = df
 
-# 6. Tabel Editor Interaktif (Judul kolom sekarang sudah bersih dari Unnamed: ...)
 edited_df = st.data_editor(
     df_display,
     num_rows="dynamic",
     use_container_width=True,
-    key=f"editor_{tab_terpilih}"
+    key=f"editor_tabel_{tab_terpilih}"
 )
 
-# 7. Tombol Simpan Perubahan ke Google Sheets
 col1, col2 = st.columns([1, 4])
 with col1:
-    tombol_simpan = st.button("💾 Simpan Perubahan", type="primary", use_container_width=True)
+    if st.button("💾 Simpan Perubahan Tabel", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Menyimpan tabel ke Google Sheets..."):
+                if keyword:
+                    df.update(edited_df)
+                    data_to_save = df
+                else:
+                    data_to_save = edited_df
 
-if tombol_simpan:
-    try:
-        with st.spinner("Menyimpan perubahan ke Google Sheets..."):
-            # Jika tabel sedang difilter, update hanya baris yang diedit ke dataframe utama
-            if keyword:
-                df.update(edited_df)
-                data_to_save = df
-            else:
-                data_to_save = edited_df
-
-            # Update data ke Google Sheets
-            conn.update(worksheet=tab_terpilih, data=data_to_save)
-            st.success("✅ Berhasil! Data di Google Sheets sudah diperbarui.")
-            st.rerun()
-    except Exception as e:
-        st.error(f"❌ Gagal menyimpan perubahan: {e}")
+                conn.update(worksheet=tab_terpilih, data=data_to_save)
+                st.success("✅ Seluruh tabel berhasil diperbarui di Google Sheets.")
+                st.rerun()
+        except Exception as e:
+            st.error(f"❌ Gagal menyimpan perubahan tabel: {e}")
