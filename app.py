@@ -1,106 +1,158 @@
 import streamlit as st
 import pandas as pd
-import openpyxl
+import requests
+import msal
+import io
 
-# 1. Pengaturan Halaman
-st.set_page_config(page_title="Progress CMI", page_icon="📊", layout="centered")
-st.title("📊 Monitoring & Update Progress CMI")
+# ==========================================
+# 1. KONFIGURASI HALAMAN (MOBILE FRIENDLY)
+# ==========================================
+st.set_page_config(
+    page_title="Progress CMI-rfk",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-EXCEL_FILE = "Progress CMI-All Project.xlsx"
+st.title("📊 Progress CMI-rfk")
+st.caption("Monitoring & Update Proyek Real-Time via OneDrive")
 
-# --- FITUR AUTO-DETECT HEADER ---
-def load_data_otomatis(sheet_name):
-    # Baca 10 baris pertama untuk melacak posisi judul kuning
-    df_temp = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name, header=None, nrows=10)
-    
-    header_row_idx = 0
-    for i, row in df_temp.iterrows():
-        teks_baris = " ".join([str(val).lower() for val in row.values])
-        if "site id" in teks_baris or "site name" in teks_baris or "tenant" in teks_baris:
-            header_row_idx = i
-            break
-            
-    df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name, header=header_row_idx)
-    df = df.dropna(how="all")
-    return df, header_row_idx
-
-def update_sel_excel(sheet_name, excel_row, excel_col, nilai_baru):
-    wb = openpyxl.load_workbook(EXCEL_FILE)
-    ws = wb[sheet_name]
-    ws.cell(row=excel_row, column=excel_col, value=nilai_baru)
-    wb.save(EXCEL_FILE)
-
-# 2. Pilih Sheet
-sheet_pilihan = st.selectbox("📂 Pilih Sheet / Kategori:", ["Reloc", "Account"])
-
-try:
-    df, header_idx = load_data_otomatis(sheet_pilihan)
-
-    st.markdown("---")
-    st.subheader("⚡ Update Cepat Data Site")
-
-    # --- LANGKAH 1: PILIH KOLOM IDENTITAS ---
-    daftar_kolom = list(df.columns)
-    
-    default_site_col = 0
-    for idx, col in enumerate(daftar_kolom):
-        if "site name" in str(col).lower() or "site id" in str(col).lower():
-            default_site_col = idx
-            break
-
-    kolom_site = st.selectbox(
-        "1️⃣ Pilih Kolom Identitas Site (Acuan Pencarian):", 
-        daftar_kolom, 
-        index=default_site_col
-    )
-    
-    daftar_site = df[kolom_site].dropna().astype(str).unique().tolist()
-    daftar_site = [site for site in daftar_site if site.lower() != "nan" and site.strip() != ""]
-
-    if len(daftar_site) == 0:
-        st.warning("⚠️ Kolom yang dipilih tidak berisi data teks site. Silakan pilih kolom lain di atas.")
-    else:
-        # --- LANGKAH 2: CARI & PILIH SITE ---
-        site_dipilih = st.selectbox("2️⃣ Ketik & Pilih Nama / ID Site:", daftar_site)
-
-        baris_cocok = df[df[kolom_site].astype(str) == site_dipilih]
+# ==========================================
+# 2. AUTENTIKASI MICROSOFT GRAPH API
+# ==========================================
+def get_access_token():
+    try:
+        azure_conf = st.secrets["azure"]
+        authority = f"https://login.microsoftonline.com/{azure_conf['TENANT_ID']}"
+        app = msal.ConfidentialClientApplication(
+            azure_conf["CLIENT_ID"],
+            authority=authority,
+            client_credential=azure_conf["CLIENT_SECRET"]
+        )
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
         
-        if not baris_cocok.empty:
-            idx = baris_cocok.index[0]
-
-            # --- LANGKAH 3: PILIH KOLOM YANG INGIN DIUPDATE ---
-            kolom_target = st.selectbox("3️⃣ Pilih Judul Kolom yang Ingin Diupdate:", daftar_kolom)
-            col_idx = daftar_kolom.index(kolom_target)
-
-            nilai_lama = df.at[idx, kolom_target]
-            if pd.isna(nilai_lama):
-                nilai_lama = "-"
-
-            # --- LANGKAH 4: FORM INPUT YANG LEBIH SIMPEL & BERSIH ---
-            with st.form("form_update_cmi"):
-                nilai_baru = st.text_input(
-                    f"✏️ Masukkan nilai baru untuk '{kolom_target}':", 
-                    value=str(nilai_lama) if nilai_lama != "-" else ""
-                )
-                
-                tombol_simpan = st.form_submit_button("💾 Simpan Perubahan")
-
-                if tombol_simpan:
-                    excel_row = idx + header_idx + 2
-                    excel_col = col_idx + 1
-
-                    update_sel_excel(sheet_pilihan, excel_row, excel_col, nilai_baru)
-                    
-                    st.success(f"✅ Berhasil! '{kolom_target}' pada **{site_dipilih}** diperbarui menjadi **{nilai_baru}**.")
-                    st.rerun()
+        if "access_token" in result:
+            return result["access_token"]
         else:
-            st.error("Data site tidak ditemukan.")
+            st.error("❌ Gagal mendapatkan token akses dari Azure.")
+            st.json(result)  # Tampilkan detail error autentikasi jika token gagal
+            return None
+    except Exception as e:
+        st.error(f"❌ Error Autentikasi: {e}")
+        return None
 
-    # --- TAMPILAN TABEL DATA ---
-    st.markdown("---")
-    st.subheader("📋 Tabel Data Keseluruhan")
-    st.metric(label="Total Site Terdaftar", value=f"{len(df)} Site")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+# ==========================================
+# 3. FUNGSI BACA DATA DARI ONEDRIVE
+# ==========================================
+@st.cache_data(ttl=10)
+def load_all_sheets():
+    token = get_access_token()
+    if not token:
+        return None
+    
+    user_email = st.secrets["azure"]["USER_EMAIL"]
+    file_name = "Progress CMI-rfk.xlsx"
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://graph.microsoft.com/v1.0/users/{user_email}/drive/root:/{file_name}:/content"
+    
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        # Baca SEMUA tab (sheet_name=None) menjadi dictionary: {'NamaSheet': DataFrame}
+        excel_data = pd.read_excel(io.BytesIO(response.content), sheet_name=None)
+        return excel_data
+    else:
+        # --- DETEKTOR ERROR MICROSOFT ---
+        st.error(f"❌ Gagal mengambil data dari OneDrive! (Status Code: {response.status_code})")
+        st.warning("Pesan Error Asli dari Microsoft Graph API:")
+        st.code(response.text, language="json")
+        return None
 
-except Exception as e:
-    st.error(f"Terjadi kesalahan: {e}")
+# ==========================================
+# 4. FUNGSI SIMPAN DATA KE ONEDRIVE
+# ==========================================
+def save_all_sheets_to_onedrive(sheets_dict):
+    token = get_access_token()
+    if not token:
+        return False
+        
+    user_email = st.secrets["azure"]["USER_EMAIL"]
+    file_name = "Progress CMI-rfk.xlsx"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+    url = f"https://graph.microsoft.com/v1.0/users/{user_email}/drive/root:/{file_name}:/content"
+    
+    # Simpan kembali semua sheet agar tab lain tidak hilang
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for sheet_name, df in sheets_dict.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    output.seek(0)
+    
+    response = requests.put(url, headers=headers, data=output)
+    if response.status_code in [200, 201]:
+        st.cache_data.clear()
+        return True
+    else:
+        st.error(f"❌ Gagal menyimpan ke OneDrive (Status Code: {response.status_code})")
+        st.code(response.text, language="json")
+        return False
+
+# ==========================================
+# 5. ANTARMUKA PENGGUNA (UI / UX)
+# ==========================================
+
+# Tombol Refresh Manual
+col_refresh, _ = st.columns([1, 2])
+with col_refresh:
+    if st.button("🔄 Refresh Data Terbaru", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+st.divider()
+
+# Load Data dari OneDrive
+sheets_data = load_all_sheets()
+
+if sheets_data is not None:
+    # Pilihan Tab/Sheet
+    sheet_names = list(sheets_data.keys())
+    selected_sheet = st.selectbox("📁 Pilih Tab / Sheet:", sheet_names)
+    
+    df_current = sheets_data[selected_sheet]
+    
+    # Mode Pencarian Cepat
+    search_query = st.text_input("🔍 Cari data pada tabel ini:", placeholder="Ketik kata kunci...")
+    if search_query:
+        mask = df_current.astype(str).apply(
+            lambda x: x.str.contains(search_query, case=False, na=False)
+        ).any(axis=1)
+        df_display = df_current[mask]
+    else:
+        df_display = df_current
+
+    # Tampilkan Data Editor
+    st.write(f"**Menampilkan Sheet:** `{selected_sheet}`")
+    edited_df = st.data_editor(
+        df_display,
+        use_container_width=True,
+        num_rows="dynamic",
+        key=f"editor_{selected_sheet}"
+    )
+
+    st.divider()
+
+    # Tombol Simpan Perubahan ke OneDrive
+    if st.button("💾 Simpan Perubahan ke OneDrive", type="primary", use_container_width=True):
+        with st.spinner("Mengunggah data ke OneDrive..."):
+            sheets_data[selected_sheet] = edited_df
+            
+            success = save_all_sheets_to_onedrive(sheets_data)
+            if success:
+                st.success("✅ Berhasil! File Excel di OneDrive sudah diperbarui.")
+                st.rerun()
+else:
+    st.info("💡 Tidak dapat menampilkan tabel karena gagal terhubung ke file OneDrive di atas.")
