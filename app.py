@@ -31,18 +31,25 @@ if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=1 KARENA JUDUL DI BARIS KE-2)
+# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=0 / BARIS 1 SEBAGAI JUDUL KOLOM)
 # -----------------------------------------------------------------------------
 try:
     with st.spinner("Mengambil data dari Google Sheets..."):
-        # header=1 artinya membaca Baris ke-2 (Row 2) sebagai nama kolom
-        df = conn.read(ttl=0, header=1)
+        # header=0 (default) membaca Baris 1 sebagai nama kolom
+        df = conn.read(ttl=0, header=0)
+        # Hapus baris yang kosong sepenuhnya agar dropdown rapi & tidak error
+        df = df.dropna(how="all").reset_index(drop=True)
 except Exception as e:
     st.error(f"❌ Gagal membaca data Google Sheets: {e}")
     st.stop()
 
+# Cek pengaman jika tabel kosong (belum ada baris data di Baris 2 ke bawah)
+if df.empty:
+    st.warning("⚠️ Tabel di Google Sheets masih kosong. Pastikan Baris 1 berisi nama kolom dan minimal ada 1 baris data proyek di Baris 2.")
+    st.stop()
+
 # -----------------------------------------------------------------------------
-# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL
+# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (KEYWORD MATCHING)
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     """Mencari nama kolom asli di DataFrame yang mengandung kata kunci."""
@@ -54,7 +61,7 @@ def cari_nama_kolom(kata_kunci):
     return None
 
 def cari_kolom_grup(kata_kunci_list):
-    """Mencari daftar kolom asli berdasarkan kumpulan kata kunci (tidak duplikat)."""
+    """Mencari daftar kolom asli berdasarkan kumpulan kata kunci (tanpa duplikat)."""
     ditemukan = []
     for kunci in kata_kunci_list:
         for col in df.columns:
@@ -67,7 +74,7 @@ col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.col
 col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
 # -----------------------------------------------------------------------------
-# 6. GATE 1: PEMILIHAN SITE ID / SITE NAME
+# 6. GATE 1: PEMILIHAN SITE ID / SITE NAME (ANTI-CRASH)
 # -----------------------------------------------------------------------------
 st.subheader("🔍 Gate 1: Pilih Site ID / Site Name")
 
@@ -75,15 +82,26 @@ daftar_pilihan_site = []
 for idx, row in df.iterrows():
     val_id = str(row.get(col_site_id, "")).strip()
     val_name = str(row.get(col_site_name, "")).strip()
-    label_tampil = f"{val_id}  —  {val_name}" if (val_id or val_name) else f"Baris {idx+1}"
-    daftar_pilihan_site.append((idx, label_tampil))
+    if val_id or val_name:  # Pastikan baris memiliki identitas
+        label_tampil = f"{val_id}  —  {val_name}"
+        daftar_pilihan_site.append((idx, label_tampil))
 
-idx_site, nama_site_terpilih = st.selectbox(
+if not daftar_pilihan_site:
+    st.warning("⚠️ Data Site tidak terdeteksi. Pastikan kolom Site ID atau Site Name di Google Sheets sudah terisi.")
+    st.stop()
+
+pilihan_terpilih = st.selectbox(
     "Pilih Site yang ingin dilihat atau diedit:",
     options=daftar_pilihan_site,
     format_func=lambda x: x[1],
     key="select_gate_site"
 )
+
+if not pilihan_terpilih:
+    st.info("👈 Silakan pilih Site di atas terlebih dahulu.")
+    st.stop()
+
+idx_site, nama_site_terpilih = pilihan_terpilih
 
 st.divider()
 
@@ -184,7 +202,7 @@ with tab4:
     st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
     st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
     
-    # 1. Klasifikasikan kolom ke 3 sub-grup SOW berdasarkan kata kunci di namanya
+    # Klasifikasi kolom ke 3 sub-grup SOW berdasarkan kata kunci di namanya
     grup_tower = cari_kolom_grup(["Dismantle Tower", "Tanggal Dismantle Tower", "Status Tower", "Tgl Tower"])
     grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat"])
     grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat"])
@@ -196,7 +214,7 @@ with tab4:
         with st.form("form_update_sow_berlapis"):
             st.write(f"✏️ **Form Edit SOW Lengkap: {nama_site_terpilih}**")
             
-            # BUAT SUB-TAB BERLAPIS DI DALAM TAB SOW
+            # SUB-TAB BERLAPIS DI DALAM TAB SOW (GATE 3)
             subtab_tower, subtab_equip, subtab_reloc = st.tabs([
                 "🏗️ Dismantle Tower",
                 "⚙️ Dismantle Equipment",
@@ -263,17 +281,16 @@ with tab4:
             if submit_sow:
                 try:
                     with st.spinner("Menyimpan seluruh data SOW ke Google Sheets..."):
-                        # 1. Update nilai pada baris index site yang dipilih
+                        # 1. Update nilai pada baris index site yang dipilih (Anti-Error float64)
                         for nama_col, val_baru in input_progress_baru.items():
-                            # Paksa kolom agar bertipe string/object terlebih dahulu (Anti-Error float64)
                             df[nama_col] = df[nama_col].astype(str)
                             df.at[idx_site, nama_col] = str(val_baru)
                         
-                        # 2. Simpan ke Google Sheets
+                        # 2. Simpan ke Google Sheets secara aman
                         conn.update(data=df)
                         st.success(f"✅ Berhasil mengupdate detail SOW pada site: {nama_site_terpilih}!")
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Gagal menyimpan perubahan progress SOW: {e}")
     else:
-        st.warning("⚠️ Tidak ada kolom SOW yang terdeteksi di Baris ke-2 Google Sheets.")
+        st.warning("⚠️ Tidak ada kolom SOW yang terdeteksi di Baris 1 Google Sheets.")
