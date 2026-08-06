@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Progress CMI - Realtime Editor")
-st.caption("Aplikasi monitoring & update data proyek secara real-time (Google Sheets).")
+st.caption("Aplikasi monitoring & update data proyek secara real-time (Google Sheets - Single Sheet).")
 
 # -----------------------------------------------------------------------------
 # 2. INISIALISASI KONEKSI KE GOOGLE SHEETS
@@ -20,23 +20,10 @@ st.caption("Aplikasi monitoring & update data proyek secara real-time (Google Sh
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR: PILIH TAB (WORKSHEET) GOOGLE SHEETS
+# 3. SIDEBAR (RINGKAS: HANYA TOMBOL REFRESH)
 # -----------------------------------------------------------------------------
-daftar_tab = [
-    "Reloc",
-    "Account",
-    "List Material Inbound",
-    "LOS Survey",
-    "List team",
-    "Email Permit",
-    "SPH",
-    "oret2",
-    "Update Boram",
-    "CMI-RLC-Nasional"
-]
-
 st.sidebar.header("⚙️ Pengaturan")
-tab_terpilih = st.sidebar.selectbox("📂 Pilih Tab (Worksheet):", daftar_tab, index=0)
+st.sidebar.caption("Google Sheets terhubung pada Sheet utama (Sheet tunggal).")
 
 if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
     st.rerun()
@@ -44,32 +31,35 @@ if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=2)
+# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=1 KARENA JUDUL DI BARIS KE-2)
 # -----------------------------------------------------------------------------
 try:
-    with st.spinner(f"Mengambil data dari tab '{tab_terpilih}'..."):
-        # header=2 untuk melewati baris merged/kosong di atas tabel utama
-        df = conn.read(worksheet=tab_terpilih, ttl=0, header=2)
+    with st.spinner("Mengambil data dari Google Sheets..."):
+        # header=1 artinya membaca Baris ke-2 (Row 2) sebagai nama kolom
+        df = conn.read(ttl=0, header=1)
 except Exception as e:
-    st.error(f"❌ Gagal membaca tab **'{tab_terpilih}'**: {e}")
+    st.error(f"❌ Gagal membaca data Google Sheets: {e}")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (CASE-INSENSITIVE)
+# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (CASE-INSENSITIVE & SYMBOL-SAFE)
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     """Mencari nama kolom asli di DataFrame yang mengandung kata kunci."""
     for col in df.columns:
-        if kata_kunci.lower() in str(col).lower():
+        # Menghapus spasi berlebih untuk pencarian lebih akurat
+        col_clean = str(col).strip().lower()
+        kunci_clean = kata_kunci.strip().lower()
+        if kunci_clean in col_clean:
             return col
     return None
 
-# Coba temukan kolom kunci utama untuk Site ID & Site Name
-col_site_id = cari_nama_kolom("Site ID") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
-col_site_name = cari_nama_kolom("Site Name") or (df.columns[2] if len(df.columns) > 2 else df.columns[0])
+# Deteksi kolom Site ID & Site Name
+col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.columns[0]
+col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
 # -----------------------------------------------------------------------------
-# 6. GATE PERTAMA: PEMILIHAN SITE ID / SITE NAME
+# 6. GATE 1: PEMILIHAN SITE ID / SITE NAME
 # -----------------------------------------------------------------------------
 st.subheader("🔍 Gate 1: Pilih Site ID / Site Name")
 
@@ -77,7 +67,7 @@ daftar_pilihan_site = []
 for idx, row in df.iterrows():
     val_id = str(row.get(col_site_id, "")).strip()
     val_name = str(row.get(col_site_name, "")).strip()
-    label_tampil = f"{val_id}  —  {val_name}" if val_id or val_name else f"Baris {idx+1}"
+    label_tampil = f"{val_id}  —  {val_name}" if (val_id or val_name) else f"Baris {idx+1}"
     daftar_pilihan_site.append((idx, label_tampil))
 
 idx_site, nama_site_terpilih = st.selectbox(
@@ -93,7 +83,7 @@ st.divider()
 data_site = df.loc[idx_site]
 
 # -----------------------------------------------------------------------------
-# 7. GATE KEDUA: 4 BAGIAN UTAMA (DETAIL INFORMATION, PERMIT, HSE, SOW)
+# 7. GATE 2: 4 BAGIAN UTAMA (DETAIL INFORMATION, PERMIT, HSE, SOW)
 # -----------------------------------------------------------------------------
 st.subheader(f"📌 Detail Site: **{nama_site_terpilih}**")
 
@@ -111,20 +101,21 @@ with tab1:
     st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
     st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
     
-    # Daftar kata kunci sesuai bagan struktur
+    # Termasuk End Lease sesuai letak kolom di spreadsheet
     target_detail = [
-        "Provinsi", "Kabupaten", "Address", "Lat / Long", 
-        "Tower Height", "Tower Weight", "End Lease"
+        "Provinsi", "Kabupaten", "Address", "Lat", "Tower Height", 
+        "Tower Weight", "End Lease"
     ]
     
     cols = st.columns(3)
     for i, kunci in enumerate(target_detail):
         nama_col_asli = cari_nama_kolom(kunci)
+        label_col = nama_col_asli if nama_col_asli else kunci
         nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
         
         with cols[i % 3]:
             st.text_input(
-                label=kunci,
+                label=label_col,
                 value=nilai_tampil,
                 disabled=True,
                 key=f"lock_detail_{i}"
@@ -137,7 +128,7 @@ with tab2:
     st.markdown("### 📑 Permit *(Locked / Read-Only)*")
     st.caption("Data perizinan site dilock agar tidak terjadi modifikasi secara tidak sengaja.")
     
-    target_permit = ["Start - End", "Permit", "Start", "End"]
+    target_permit = ["Start-End", "Permit"]
     cols = st.columns(2)
     
     ditemukan = False
@@ -154,7 +145,7 @@ with tab2:
                     key=f"lock_permit_{i}"
                 )
     if not ditemukan:
-        st.info("ℹ️ Kolom terkait 'Permit' atau 'Start - End' tidak terdeteksi pada tab ini.")
+        st.info("ℹ️ Kolom terkait 'Permit' atau 'Start-End' tidak terdeteksi pada tabel.")
 
 # =============================================================================
 # TAB 3: HSE (READ-ONLY / LOCKED)
@@ -168,11 +159,12 @@ with tab3:
     
     for i, kunci in enumerate(target_hse):
         nama_col_asli = cari_nama_kolom(kunci)
+        label_col = nama_col_asli if nama_col_asli else kunci
         nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
         
         with cols[i % 3]:
             st.text_input(
-                label=kunci,
+                label=label_col,
                 value=nilai_tampil,
                 disabled=True,
                 key=f"lock_hse_{i}"
@@ -185,14 +177,14 @@ with tab4:
     st.markdown("### 🛠️ SOW (Scope of Work)")
     st.caption("Hanya bagian Progress pada kolom di bawah ini yang dapat kamu edit dan simpan ke Google Sheets.")
     
-    target_sow = ["Dismantle Tower", "Dismantle Equipment", "Relocation", "Progress"]
+    target_sow = ["Dismantle Tower", "Dismantle Equipment", "Relocation"]
     kolom_sow_terdeteksi = []
     
-    # Kumpulkan semua kolom yang sesuai dengan SOW / Progress
+    # Kumpulkan semua kolom yang sesuai dengan SOW
     for kunci in target_sow:
-        for col in df.columns:
-            if kunci.lower() in str(col).lower() and col not in kolom_sow_terdeteksi:
-                kolom_sow_terdeteksi.append(col)
+        nama_col = cari_nama_kolom(kunci)
+        if nama_col and nama_col not in kolom_sow_terdeteksi:
+            kolom_sow_terdeteksi.append(nama_col)
     
     if kolom_sow_terdeteksi:
         with st.form("form_update_sow"):
@@ -223,11 +215,11 @@ with tab4:
                         for nama_col, val_baru in input_progress_baru.items():
                             df.at[idx_site, nama_col] = val_baru
                         
-                        # Simpan ke Google Sheets
-                        conn.update(worksheet=tab_terpilih, data=df)
+                        # Simpan ke Google Sheets (otomatis ke sheet pertama/tunggal)
+                        conn.update(data=df)
                         st.success(f"✅ Berhasil mengupdate progress SOW pada site: {nama_site_terpilih}!")
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Gagal menyimpan perubahan progress SOW: {e}")
     else:
-        st.warning("⚠️ Kolom bernama 'Dismantle Tower', 'Dismantle Equipment', 'Relocation', atau 'Progress' tidak ditemukan pada tab Google Sheets ini. Pastikan nama kolom di spreadsheet sesuai dengan SOW.")
+        st.warning("⚠️ Kolom 'Dismantle Tower', 'Dismantle Equipment', atau 'Relocation' tidak terdeteksi. Pastikan nama kolom di Baris ke-2 Google Sheets sudah sesuai.")
