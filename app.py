@@ -42,19 +42,27 @@ except Exception as e:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (CASE-INSENSITIVE & SYMBOL-SAFE)
+# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     """Mencari nama kolom asli di DataFrame yang mengandung kata kunci."""
     for col in df.columns:
-        # Menghapus spasi berlebih untuk pencarian lebih akurat
         col_clean = str(col).strip().lower()
-        kunci_clean = kata_kunci.strip().lower()
+        kunci_clean = str(kata_kunci).strip().lower()
         if kunci_clean in col_clean:
             return col
     return None
 
-# Deteksi kolom Site ID & Site Name
+def cari_kolom_grup(kata_kunci_list):
+    """Mencari daftar kolom asli berdasarkan kumpulan kata kunci (tidak duplikat)."""
+    ditemukan = []
+    for kunci in kata_kunci_list:
+        for col in df.columns:
+            if kunci.lower() in str(col).lower() and col not in ditemukan:
+                ditemukan.append(col)
+    return ditemukan
+
+# Deteksi kolom Site ID & Site Name utama
 col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.columns[0]
 col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
@@ -101,7 +109,6 @@ with tab1:
     st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
     st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
     
-    # Termasuk End Lease sesuai letak kolom di spreadsheet
     target_detail = [
         "Provinsi", "Kabupaten", "Address", "Lat", "Tower Height", 
         "Tower Weight", "End Lease"
@@ -171,55 +178,102 @@ with tab3:
             )
 
 # =============================================================================
-# TAB 4: SOW (SCOPE OF WORK) — HANYA INI YANG BISA DIEDIT & DISIMPAN!
+# TAB 4: SOW (SCOPE OF WORK) — SUB-TAB BERLAPIS (NESTED TABS) & EDITABLE
 # =============================================================================
 with tab4:
-    st.markdown("### 🛠️ SOW (Scope of Work)")
-    st.caption("Hanya bagian Progress pada kolom di bawah ini yang dapat kamu edit dan simpan ke Google Sheets.")
+    st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
+    st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
     
-    target_sow = ["Dismantle Tower", "Dismantle Equipment", "Relocation"]
-    kolom_sow_terdeteksi = []
+    # 1. Klasifikasikan kolom ke 3 sub-grup SOW berdasarkan kata kunci di namanya
+    grup_tower = cari_kolom_grup(["Dismantle Tower", "Tanggal Dismantle Tower", "Status Tower", "Tgl Tower"])
+    grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat"])
+    grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat"])
     
-    # Kumpulkan semua kolom yang sesuai dengan SOW
-    for kunci in target_sow:
-        nama_col = cari_nama_kolom(kunci)
-        if nama_col and nama_col not in kolom_sow_terdeteksi:
-            kolom_sow_terdeteksi.append(nama_col)
+    # Kumpulkan semua kolom yang masuk ke SOW agar bisa disimpan sekaligus
+    semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
     
-    if kolom_sow_terdeteksi:
-        with st.form("form_update_sow"):
-            st.write(f"✏️ **Update Progress untuk: {nama_site_terpilih}**")
+    if semua_kolom_sow:
+        with st.form("form_update_sow_berlapis"):
+            st.write(f"✏️ **Form Edit SOW Lengkap: {nama_site_terpilih}**")
+            
+            # BUAT SUB-TAB BERLAPIS DI DALAM TAB SOW
+            subtab_tower, subtab_equip, subtab_reloc = st.tabs([
+                "🏗️ Dismantle Tower",
+                "⚙️ Dismantle Equipment",
+                "🚚 Relocation"
+            ])
             
             input_progress_baru = {}
-            cols = st.columns(len(kolom_sow_terdeteksi) if len(kolom_sow_terdeteksi) <= 3 else 3)
             
-            for i, nama_col in enumerate(kolom_sow_terdeteksi):
-                val_lama = data_site[nama_col]
-                val_lama_str = "" if pd.isna(val_lama) else str(val_lama)
-                
-                with cols[i % 3]:
-                    # Kolom ini TIDAK DI-DISABLED agar bisa diedit progressnya
-                    input_progress_baru[nama_col] = st.text_input(
-                        label=f"🔄 {nama_col}",
-                        value=val_lama_str,
-                        key=f"edit_sow_{i}"
-                    )
+            # --- SUB-TAB 1: DISMANTLE TOWER ---
+            with subtab_tower:
+                st.markdown("#### 🏗️ Detail Dismantle Tower")
+                if grup_tower:
+                    cols_t = st.columns(2 if len(grup_tower) <= 2 else 3)
+                    for i, col_name in enumerate(grup_tower):
+                        val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                        with cols_t[i % 3]:
+                            input_progress_baru[col_name] = st.text_input(
+                                label=f"🔄 {col_name}",
+                                value=val_lama,
+                                key=f"edit_tower_{i}"
+                            )
+                else:
+                    st.info("ℹ️ Belum ada kolom khusus 'Dismantle Tower' yang terdeteksi.")
+            
+            # --- SUB-TAB 2: DISMANTLE EQUIPMENT ---
+            with subtab_equip:
+                st.markdown("#### ⚙️ Detail Equipment & Tenant")
+                if grup_equipment:
+                    cols_e = st.columns(2 if len(grup_equipment) <= 2 else 3)
+                    for i, col_name in enumerate(grup_equipment):
+                        val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                        with cols_e[i % 3]:
+                            input_progress_baru[col_name] = st.text_input(
+                                label=f"🔄 {col_name}",
+                                value=val_lama,
+                                key=f"edit_equip_{i}"
+                            )
+                else:
+                    st.info("ℹ️ Belum ada kolom khusus 'Equipment / Tenant' yang terdeteksi.")
+            
+            # --- SUB-TAB 3: RELOCATION ---
+            with subtab_reloc:
+                st.markdown("#### 🚚 Detail Relocation (Site ID Old / New)")
+                if grup_relocation:
+                    cols_r = st.columns(2 if len(grup_relocation) <= 2 else 3)
+                    for i, col_name in enumerate(grup_relocation):
+                        val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                        with cols_r[i % 3]:
+                            input_progress_baru[col_name] = st.text_input(
+                                label=f"🔄 {col_name}",
+                                value=val_lama,
+                                key=f"edit_reloc_{i}"
+                            )
+                else:
+                    st.info("ℹ️ Belum ada kolom khusus 'Relocation / Old / New' yang terdeteksi.")
             
             st.divider()
-            submit_sow = st.form_submit_button("💾 Simpan Progress SOW ke Google Sheets", type="primary", use_container_width=True)
+            submit_sow = st.form_submit_button(
+                "💾 Simpan Seluruh Update SOW ke Google Sheets", 
+                type="primary", 
+                use_container_width=True
+            )
             
             if submit_sow:
                 try:
-                    with st.spinner("Menyimpan update progress SOW ke Google Sheets..."):
-                        # Update nilai pada baris index site yang dipilih
+                    with st.spinner("Menyimpan seluruh data SOW ke Google Sheets..."):
+                        # 1. Update nilai pada baris index site yang dipilih
                         for nama_col, val_baru in input_progress_baru.items():
-                            df.at[idx_site, nama_col] = val_baru
+                            # Paksa kolom agar bertipe string/object terlebih dahulu (Anti-Error float64)
+                            df[nama_col] = df[nama_col].astype(str)
+                            df.at[idx_site, nama_col] = str(val_baru)
                         
-                        # Simpan ke Google Sheets (otomatis ke sheet pertama/tunggal)
+                        # 2. Simpan ke Google Sheets
                         conn.update(data=df)
-                        st.success(f"✅ Berhasil mengupdate progress SOW pada site: {nama_site_terpilih}!")
+                        st.success(f"✅ Berhasil mengupdate detail SOW pada site: {nama_site_terpilih}!")
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Gagal menyimpan perubahan progress SOW: {e}")
     else:
-        st.warning("⚠️ Kolom 'Dismantle Tower', 'Dismantle Equipment', atau 'Relocation' tidak terdeteksi. Pastikan nama kolom di Baris ke-2 Google Sheets sudah sesuai.")
+        st.warning("⚠️ Tidak ada kolom SOW yang terdeteksi di Baris ke-2 Google Sheets.")
