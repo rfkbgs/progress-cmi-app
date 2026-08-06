@@ -1,177 +1,233 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import gspread
 
-# ==========================================
-# 1. KONFIGURASI HALAMAN WEB (MOBILE-FRIENDLY)
-# ==========================================
+# -----------------------------------------------------------------------------
+# 1. KONFIGURASI HALAMAN
+# -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Site Monitoring & Progress SOW",
-    page_icon="📡",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+    page_title="Progress CMI - Realtime Editor",
+    page_icon="📊",
+    layout="wide"
 )
 
-# ==========================================
-# 2. KONEKSI KE GOOGLE SHEETS
-# ==========================================
-@st.cache_resource
-def get_worksheet():
-    try:
-        # Menghubungkan menggunakan service account file (credentials.json)
-        gc = gspread.service_account(filename="credentials.json")
-        
-        # GANTI "Nama Google Sheet Kamu" dengan JUDUL file Google Sheets kamu
-        sh = gc.open("Nama Google Sheet Kamu")
-        
-        # Mengambil sheet pertama (Sheet1 / Data_Site)
-        worksheet = sh.sheet1
-        return worksheet
-    except Exception as e:
-        st.error(f"Gagal terhubung ke Google Sheets: {e}")
-        st.stop()
+st.title("📊 Progress CMI - Realtime Editor")
+st.caption("Aplikasi monitoring & update data proyek secara real-time (Google Sheets).")
 
-worksheet = get_worksheet()
+# -----------------------------------------------------------------------------
+# 2. INISIALISASI KONEKSI KE GOOGLE SHEETS
+# -----------------------------------------------------------------------------
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Ambil data dari sheet sebagai DataFrame (cache 10 detik agar cepat di HP)
-@st.cache_data(ttl=10)
-def load_data():
-    data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
-    # Pastikan Site ID dibaca sebagai string agar tidak error pada angka
-    if "Site ID" in df.columns:
-        df["Site ID"] = df["Site ID"].astype(str)
-    return df
+# -----------------------------------------------------------------------------
+# 3. SIDEBAR: PILIH TAB (WORKSHEET) GOOGLE SHEETS
+# -----------------------------------------------------------------------------
+daftar_tab = [
+    "Reloc",
+    "Account",
+    "List Material Inbound",
+    "LOS Survey",
+    "List team",
+    "Email Permit",
+    "SPH",
+    "oret2",
+    "Update Boram",
+    "CMI-RLC-Nasional"
+]
 
-df = load_data()
+st.sidebar.header("⚙️ Pengaturan")
+tab_terpilih = st.sidebar.selectbox("📂 Pilih Tab (Worksheet):", daftar_tab, index=0)
 
-# Cek jika data kosong
-if df.empty:
-    st.warning("Data di Google Sheets masih kosong. Silakan isi data terlebih dahulu.")
+if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
+    st.rerun()
+
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=2)
+# -----------------------------------------------------------------------------
+try:
+    with st.spinner(f"Mengambil data dari tab '{tab_terpilih}'..."):
+        # header=2 untuk melewati baris merged/kosong di atas tabel utama
+        df = conn.read(worksheet=tab_terpilih, ttl=0, header=2)
+except Exception as e:
+    st.error(f"❌ Gagal membaca tab **'{tab_terpilih}'**: {e}")
     st.stop()
 
-# ==========================================
-# 3. HEADER APLIKASI
-# ==========================================
-st.title("📡 Site Monitoring & SOW")
-st.caption("Monitoring dan update progress lapangan. Bagian di luar SOW dikunci (Read-Only).")
-st.divider()
+# -----------------------------------------------------------------------------
+# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (CASE-INSENSITIVE)
+# -----------------------------------------------------------------------------
+def cari_nama_kolom(kata_kunci):
+    """Mencari nama kolom asli di DataFrame yang mengandung kata kunci."""
+    for col in df.columns:
+        if kata_kunci.lower() in str(col).lower():
+            return col
+    return None
 
-# ==========================================
-# 4. GATE 1: METODE PENCARIAN
-# ==========================================
-st.subheader("🔍 Gate 1: Pilih Kategori Pencarian")
-search_by = st.radio(
-    "Cari site berdasarkan:",
-    ["Site ID", "Site Name"],
-    horizontal=True
+# Coba temukan kolom kunci utama untuk Site ID & Site Name
+col_site_id = cari_nama_kolom("Site ID") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
+col_site_name = cari_nama_kolom("Site Name") or (df.columns[2] if len(df.columns) > 2 else df.columns[0])
+
+# -----------------------------------------------------------------------------
+# 6. GATE PERTAMA: PEMILIHAN SITE ID / SITE NAME
+# -----------------------------------------------------------------------------
+st.subheader("🔍 Gate 1: Pilih Site ID / Site Name")
+
+daftar_pilihan_site = []
+for idx, row in df.iterrows():
+    val_id = str(row.get(col_site_id, "")).strip()
+    val_name = str(row.get(col_site_name, "")).strip()
+    label_tampil = f"{val_id}  —  {val_name}" if val_id or val_name else f"Baris {idx+1}"
+    daftar_pilihan_site.append((idx, label_tampil))
+
+idx_site, nama_site_terpilih = st.selectbox(
+    "Pilih Site yang ingin dilihat atau diedit:",
+    options=daftar_pilihan_site,
+    format_func=lambda x: x[1],
+    key="select_gate_site"
 )
 
-# ==========================================
-# 5. GATE 2: PILIH SITE (ID / NAME)
-# ==========================================
-st.subheader("🏢 Gate 2: Pilih Site")
-if search_by == "Site ID":
-    options = df["Site ID"].unique()
-    selected_value = st.selectbox("Pilih Site ID:", options)
-    selected_row = df[df["Site ID"] == str(selected_value)].iloc[0]
-else:
-    options = df["Site Name"].unique()
-    selected_value = st.selectbox("Pilih Site Name:", options)
-    selected_row = df[df["Site Name"] == selected_value].iloc[0]
-
 st.divider()
 
-# Banner informasi site terpilih
-st.info(f"**Site Terpilih:** `{selected_row['Site ID']}` — **{selected_row['Site Name']}**")
+# Ambil data baris untuk site yang dipilih
+data_site = df.loc[idx_site]
 
-# ==========================================
-# 6. MENU TAB: 4 BAGIAN
-# ==========================================
-tab_detail, tab_permit, tab_hse, tab_sow = st.tabs([
-    "📍 Detail Info 🔒", 
-    "📜 Permit 🔒", 
-    "🛡️ HSE 🔒", 
-    "🔧 SOW (Edit) ✏️"
+# -----------------------------------------------------------------------------
+# 7. GATE KEDUA: 4 BAGIAN UTAMA (DETAIL INFORMATION, PERMIT, HSE, SOW)
+# -----------------------------------------------------------------------------
+st.subheader(f"📌 Detail Site: **{nama_site_terpilih}**")
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🏢 Detail Information",
+    "📑 Permit",
+    "🛡️ HSE",
+    "🛠️ SOW (Scope of Work) — [EDITABLE]"
 ])
 
-# --- TAB 1: DETAIL INFORMATION (READ-ONLY) ---
-with tab_detail:
-    st.write("### Detail Information")
-    st.caption("🔒 *Bagian ini dikunci (Read-Only)*")
+# =============================================================================
+# TAB 1: DETAIL INFORMATION (READ-ONLY / LOCKED)
+# =============================================================================
+with tab1:
+    st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
+    st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.text_input("Provinsi", value=str(selected_row.get("Provinsi", "")), disabled=True)
-        st.text_input("Kabupaten", value=str(selected_row.get("Kabupaten", "")), disabled=True)
-        st.text_input("Tower Height", value=str(selected_row.get("Tower Height", "")), disabled=True)
-        # End Lease masuk ke Detail Information
-        st.text_input("End Lease", value=str(selected_row.get("End Lease", "")), disabled=True)
-    with col2:
-        st.text_input("Lat / Long", value=str(selected_row.get("Lat/Long", "")), disabled=True)
-        st.text_input("Tower Weight", value=str(selected_row.get("Tower Weight", "")), disabled=True)
+    # Daftar kata kunci sesuai bagan struktur
+    target_detail = [
+        "Provinsi", "Kabupaten", "Address", "Lat / Long", 
+        "Tower Height", "Tower Weight", "End Lease"
+    ]
+    
+    cols = st.columns(3)
+    for i, kunci in enumerate(target_detail):
+        nama_col_asli = cari_nama_kolom(kunci)
+        nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
         
-    st.text_area("Address", value=str(selected_row.get("Address", "")), disabled=True)
+        with cols[i % 3]:
+            st.text_input(
+                label=kunci,
+                value=nilai_tampil,
+                disabled=True,
+                key=f"lock_detail_{i}"
+            )
 
-# --- TAB 2: PERMIT (READ-ONLY) ---
-with tab_permit:
-    st.write("### Permit Information")
-    st.caption("🔒 *Bagian ini dikunci (Read-Only)*")
+# =============================================================================
+# TAB 2: PERMIT (READ-ONLY / LOCKED)
+# =============================================================================
+with tab2:
+    st.markdown("### 📑 Permit *(Locked / Read-Only)*")
+    st.caption("Data perizinan site dilock agar tidak terjadi modifikasi secara tidak sengaja.")
     
-    # Hanya Start - End
-    st.text_input("Start - End", value=str(selected_row.get("Start - End", "")), disabled=True)
+    target_permit = ["Start - End", "Permit", "Start", "End"]
+    cols = st.columns(2)
+    
+    ditemukan = False
+    for i, kunci in enumerate(target_permit):
+        nama_col_asli = cari_nama_kolom(kunci)
+        if nama_col_asli:
+            ditemukan = True
+            nilai_tampil = str(data_site[nama_col_asli]) if pd.notna(data_site[nama_col_asli]) else "-"
+            with cols[i % 2]:
+                st.text_input(
+                    label=nama_col_asli,
+                    value=nilai_tampil,
+                    disabled=True,
+                    key=f"lock_permit_{i}"
+                )
+    if not ditemukan:
+        st.info("ℹ️ Kolom terkait 'Permit' atau 'Start - End' tidak terdeteksi pada tab ini.")
 
-# --- TAB 3: HSE (READ-ONLY) ---
-with tab_hse:
-    st.write("### HSE Documents")
-    st.caption("🔒 *Bagian ini dikunci (Read-Only)*")
+# =============================================================================
+# TAB 3: HSE (READ-ONLY / LOCKED)
+# =============================================================================
+with tab3:
+    st.markdown("### 🛡️ HSE *(Locked / Read-Only)*")
+    st.caption("Dokumen K3 dan Keselamatan Kerja dilock dari pengeditan umum.")
     
-    st.text_input("JSA", value=str(selected_row.get("JSA", "")), disabled=True)
-    st.text_input("HSE Plan", value=str(selected_row.get("HSE Plan", "")), disabled=True)
-    st.text_input("SWP", value=str(selected_row.get("SWP", "")), disabled=True)
-
-# --- TAB 4: SOW (EDITABLE & SAVE KE SHEETS) ---
-with tab_sow:
-    st.write("### 🔧 Update Progress SOW")
-    st.caption("✏️ *Hanya 3 data di bawah ini yang dapat diupdate ke Google Sheets.*")
+    target_hse = ["JSA", "HSE Plan", "SWP"]
+    cols = st.columns(3)
     
-    with st.form("form_sow_update"):
-        input_dt = st.text_input(
-            "Dismantle Tower Progress", 
-            value=str(selected_row.get("Dismantle Tower", "")),
-            placeholder="Contoh: 50% / Selesai / Belum Mulai"
-        )
-        input_de = st.text_input(
-            "Dismantle Equipment Progress", 
-            value=str(selected_row.get("Dismantle Equipment", "")),
-            placeholder="Contoh: In Progress"
-        )
-        input_re = st.text_input(
-            "Relocation Progress", 
-            value=str(selected_row.get("Relocation", "")),
-            placeholder="Contoh: Done"
-        )
+    for i, kunci in enumerate(target_hse):
+        nama_col_asli = cari_nama_kolom(kunci)
+        nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
         
-        submit_btn = st.form_submit_button("💾 Simpan Progress SOW", use_container_width=True)
-        
-        if submit_btn:
-            with st.spinner("Menyimpan perubahan ke Google Sheets..."):
+        with cols[i % 3]:
+            st.text_input(
+                label=kunci,
+                value=nilai_tampil,
+                disabled=True,
+                key=f"lock_hse_{i}"
+            )
+
+# =============================================================================
+# TAB 4: SOW (SCOPE OF WORK) — HANYA INI YANG BISA DIEDIT & DISIMPAN!
+# =============================================================================
+with tab4:
+    st.markdown("### 🛠️ SOW (Scope of Work)")
+    st.caption("Hanya bagian Progress pada kolom di bawah ini yang dapat kamu edit dan simpan ke Google Sheets.")
+    
+    target_sow = ["Dismantle Tower", "Dismantle Equipment", "Relocation", "Progress"]
+    kolom_sow_terdeteksi = []
+    
+    # Kumpulkan semua kolom yang sesuai dengan SOW / Progress
+    for kunci in target_sow:
+        for col in df.columns:
+            if kunci.lower() in str(col).lower() and col not in kolom_sow_terdeteksi:
+                kolom_sow_terdeteksi.append(col)
+    
+    if kolom_sow_terdeteksi:
+        with st.form("form_update_sow"):
+            st.write(f"✏️ **Update Progress untuk: {nama_site_terpilih}**")
+            
+            input_progress_baru = {}
+            cols = st.columns(len(kolom_sow_terdeteksi) if len(kolom_sow_terdeteksi) <= 3 else 3)
+            
+            for i, nama_col in enumerate(kolom_sow_terdeteksi):
+                val_lama = data_site[nama_col]
+                val_lama_str = "" if pd.isna(val_lama) else str(val_lama)
+                
+                with cols[i % 3]:
+                    # Kolom ini TIDAK DI-DISABLED agar bisa diedit progressnya
+                    input_progress_baru[nama_col] = st.text_input(
+                        label=f"🔄 {nama_col}",
+                        value=val_lama_str,
+                        key=f"edit_sow_{i}"
+                    )
+            
+            st.divider()
+            submit_sow = st.form_submit_button("💾 Simpan Progress SOW ke Google Sheets", type="primary", use_container_width=True)
+            
+            if submit_sow:
                 try:
-                    # Cari nomor baris berdasarkan Site ID di Google Sheets
-                    cell = worksheet.find(str(selected_row["Site ID"]))
-                    row_idx = cell.row
-                    
-                    # Update cell kolom SOW:
-                    # N = Kolom 14 (Dismantle Tower)
-                    # O = Kolom 15 (Dismantle Equipment)
-                    # P = Kolom 16 (Relocation)
-                    worksheet.update_cell(row_idx, 14, input_dt)
-                    worksheet.update_cell(row_idx, 15, input_de)
-                    worksheet.update_cell(row_idx, 16, input_re)
-                    
-                    # Hapus cache agar Streamlit langsung memuat data terbaru
-                    st.cache_data.clear()
-                    st.success("✅ Progress SOW berhasil diperbarui di Google Sheets!")
-                    st.rerun()
+                    with st.spinner("Menyimpan update progress SOW ke Google Sheets..."):
+                        # Update nilai pada baris index site yang dipilih
+                        for nama_col, val_baru in input_progress_baru.items():
+                            df.at[idx_site, nama_col] = val_baru
+                        
+                        # Simpan ke Google Sheets
+                        conn.update(worksheet=tab_terpilih, data=df)
+                        st.success(f"✅ Berhasil mengupdate progress SOW pada site: {nama_site_terpilih}!")
+                        st.rerun()
                 except Exception as e:
-                    st.error(f"Gagal memperbarui data: {e}")
+                    st.error(f"❌ Gagal menyimpan perubahan progress SOW: {e}")
+    else:
+        st.warning("⚠️ Kolom bernama 'Dismantle Tower', 'Dismantle Equipment', 'Relocation', atau 'Progress' tidak ditemukan pada tab Google Sheets ini. Pastikan nama kolom di spreadsheet sesuai dengan SOW.")
