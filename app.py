@@ -269,9 +269,9 @@ with menu_dash:
     ])
     
     grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-    # Tenant sudah dihapus sementara dari pencarian kolom Equipment
     grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-    grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
+    # Hapus "Site Id New", "Old", "New" agar murni Relocation, Tgl, dan Remark
+    grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
     
     # --- DASHBOARD A: DISMANTLE TOWER ---
     with dash_tower:
@@ -301,7 +301,7 @@ with menu_dash:
         else:
             st.info("ℹ️ Kolom 'Dismantle Tower' belum terdeteksi.")
             
-    # --- DASHBOARD B: DISMANTLE EQUIPMENT (TANPA TENANT) ---
+    # --- DASHBOARD B: DISMANTLE EQUIPMENT ---
     with dash_equip:
         st.markdown("#### 📈 Analytics: Dismantle Equipment")
         e1, e2, e3 = st.columns(3)
@@ -329,23 +329,28 @@ with menu_dash:
         else:
             st.info("ℹ️ Kolom 'Dismantle Equipment' belum terdeteksi.")
             
-    # --- DASHBOARD C: RELOCATION ---
+    # --- DASHBOARD C: RELOCATION (TANPA SITE ID NEW) ---
     with dash_reloc:
         st.markdown("#### 📈 Analytics: Site Relocation")
-        r1, r2 = st.columns(2)
+        r1, r2, r3 = st.columns(3)
         with r1:
             st.metric("Total Target Relokasi", len(df_filter))
             
-        col_new = cari_nama_kolom("Site Id New") or cari_nama_kolom("Site ID New")
+        col_reloc = cari_nama_kolom("Relocation")
         with r2:
-            if col_new and col_new in df_filter.columns:
-                reloc_ready = df_filter[col_new].replace("", pd.NA).dropna().count()
-                st.metric("Sudah Ada Site ID New", reloc_ready)
+            if col_reloc and col_reloc in df_filter.columns:
+                done_r = len(df_filter[df_filter[col_reloc].astype(str).str.upper() == "DONE"])
+                st.metric("Relocation Done", done_r)
             else:
-                st.metric("Sudah Ada Site ID New", 0)
+                st.metric("Relocation Done", 0)
+        with r3:
+            if col_reloc and col_reloc in df_filter.columns:
+                sisa_r = len(df_filter) - done_r
+                st.metric("Progress", sisa_r)
+            else:
+                st.metric("Progress", len(df_filter))
                 
         st.markdown("##### Progress Status Relokasi:")
-        col_reloc = cari_nama_kolom("Relocation")
         if col_reloc and col_reloc in df_filter.columns:
             buat_grafik_status_berwarna(df_filter[col_reloc])
             tampilkan_catatan_status_site_berwarna(df_filter, col_reloc, grup_reloc_cols)
@@ -437,12 +442,12 @@ with menu_editor:
 
     with tab4:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
-        st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, ID Lama/Baru, dll).")
+        st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Remark, dll).")
         
         grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-        # Tenant dihapus dari pencarian form edit SOW
         grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-        grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
+        # Hapus "Site Id New", "Old", "New" agar murni Relocation, Tgl, dan Remark
+        grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
         
         semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
         
@@ -475,7 +480,7 @@ with menu_editor:
                         st.info("ℹ️ Belum ada kolom khusus 'Dismantle Equipment' yang terdeteksi.")
                 
                 with subtab_reloc:
-                    st.markdown("#### 🚚 Detail Relocation (Site ID Old / New)")
+                    st.markdown("#### 🚚 Detail Relocation")
                     if grup_relocation:
                         cols_r = st.columns(2 if len(grup_relocation) <= 2 else 3)
                         for i, col_name in enumerate(grup_relocation):
@@ -483,7 +488,7 @@ with menu_editor:
                             with cols_r[i % 3]:
                                 input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_reloc_{i}")
                     else:
-                        st.info("ℹ️ Belum ada kolom khusus 'Relocation / Old / New' yang terdeteksi.")
+                        st.info("ℹ️ Belum ada kolom khusus 'Relocation' yang terdeteksi.")
                 
                 st.divider()
                 submit_sow = st.form_submit_button("💾 Simpan Seluruh Update SOW ke Google Sheets", type="primary", use_container_width=True)
