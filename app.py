@@ -3,6 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
 from datetime import datetime, date
+import os
 
 # -----------------------------------------------------------------------------
 # 1. KONFIGURASI HALAMAN & CUSTOM CSS
@@ -52,10 +53,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 PROJEK CMI - DASHBOARD")
+# -----------------------------------------------------------------------------
+# 2. HEADER DENGAN LOGO TSA DI SAMPING JUDUL
+# -----------------------------------------------------------------------------
+col_logo, col_judul = st.columns([1, 7])
+
+with col_logo:
+    # Memeriksa keberadaan file logo (format .png, .jpg, atau .jpeg)
+    for logo_file in ["tsa_logo.png", "tsa_logo.jpg", "tsa_logo.jpeg"]:
+        if os.path.exists(logo_file):
+            st.image(logo_file, width=100)
+            break
+
+with col_judul:
+    st.title("PROJEK CMI - DASHBOARD")
 
 # -----------------------------------------------------------------------------
-# 2. SYSTEM NOTIFIKASI (TOAST & BANNER) SETELAH PROSES SIMPAN
+# 3. SYSTEM NOTIFIKASI (TOAST & BANNER) SETELAH PROSES SIMPAN
 # -----------------------------------------------------------------------------
 if "notif" in st.session_state:
     tipe, pesan = st.session_state.pop("notif")
@@ -67,12 +81,12 @@ if "notif" in st.session_state:
         st.error(pesan)
 
 # -----------------------------------------------------------------------------
-# 3. INISIALISASI KONEKSI KE GOOGLE SHEETS
+# 4. INISIALISASI KONEKSI KE GOOGLE SHEETS
 # -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # -----------------------------------------------------------------------------
-# 4. SIDEBAR (TOMBOL REFRESH)
+# 5. SIDEBAR (TOMBOL REFRESH)
 # -----------------------------------------------------------------------------
 st.sidebar.header("⚙️ Pengaturan Sistem")
 st.sidebar.caption("Terhubung ke Google Sheets (Sheet Tunggal).")
@@ -83,7 +97,7 @@ if st.sidebar.button("🔄 Segarkan Data Terbaru", use_container_width=True):
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 5. MEMBACA DATA GOOGLE SHEETS
+# 6. MEMBACA DATA GOOGLE SHEETS
 # -----------------------------------------------------------------------------
 try:
     with st.spinner("Mengambil data dari Google Sheets..."):
@@ -98,7 +112,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & PROGRESS PER SITE
+# 7. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & PROGRESS PER SITE
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -211,7 +225,7 @@ def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
     """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 7. PILIHAN SITE GLOBAL (1 KALI PILIH UNTUK DASHBOARD & EDITOR)
+# 8. PILIHAN SITE GLOBAL (1 KALI PILIH UNTUK DASHBOARD & EDITOR)
 # -----------------------------------------------------------------------------
 daftar_pilihan_site = []
 for idx, row in df.iterrows():
@@ -244,7 +258,7 @@ data_site = df.loc[idx_site]
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 8. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
+# 9. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
 # -----------------------------------------------------------------------------
 menu_dash, menu_editor = st.tabs(["📈 Dashboard", "📝 Realtime Editor"])
 
