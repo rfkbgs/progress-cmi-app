@@ -274,7 +274,7 @@ with menu_dash:
         tampilkan_analytics_milestone_single_site(row_terpilih, grup_reloc_cols, "Relocation")
 
 # =============================================================================
-# MENU 2: REALTIME EDITOR (GATE 1 & GATE 2)
+# MENU 2: REALTIME EDITOR (GATE 1 & GATE 2 - WAJIB PILIH SITE)
 # =============================================================================
 with menu_editor:
     st.subheader("🔍 Gate 1: Pilih Site ID / Site Name")
@@ -291,15 +291,19 @@ with menu_editor:
         st.warning("⚠️ Data Site tidak terdeteksi. Pastikan kolom Site ID atau Site Name di Google Sheets sudah terisi.")
         st.stop()
 
+    # Default kosong agar user wajib memilih terlebih dahulu
     pilihan_terpilih = st.selectbox(
-        "Pilih Site yang ingin dilihat atau diedit:",
+        "Pilih Site yang ingin dilihat atau diedit (Ketik untuk mencari):",
         options=daftar_pilihan_site,
         format_func=lambda x: x[1],
+        index=None,
+        placeholder="-- Pilih atau ketik Site ID di sini --",
         key="select_gate_site"
     )
 
+    # JIKA USER BELUM MEMILIH SITE, TAMPILKAN INFO DAN HENTIKAN RENDER
     if not pilihan_terpilih:
-        st.info("👈 Silakan pilih Site di atas terlebih dahulu.")
+        st.info("👈 Silakan pilih atau ketik **Site ID** pada kotak di atas terlebih dahulu untuk melihat dan mengedit detail Site.")
         st.stop()
 
     idx_site, nama_site_terpilih = pilihan_terpilih
