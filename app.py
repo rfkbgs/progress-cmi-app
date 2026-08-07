@@ -53,7 +53,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 PROJEK CMI - DASHBOARD")
-st.caption("Sistem pemantauan visual dan pembaruan data lapangan terintegrasi secara real-time.")
 
 # -----------------------------------------------------------------------------
 # 2. SYSTEM NOTIFIKASI (TOAST & BANNER) SETELAH PROSES SIMPAN
