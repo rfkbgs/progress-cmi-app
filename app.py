@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS untuk membuat Kartu Catatan (Smart Notes) terlihat modern & berwarna
+# Custom CSS untuk Kartu Catatan (Smart Notes) agar tampil modern & berwarna
 st.markdown("""
 <style>
     .card-done {
@@ -42,12 +42,27 @@ st.markdown("""
     .card-title {
         font-weight: 700;
         font-size: 1.05rem;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
     }
     .site-item {
         font-size: 0.92rem;
-        margin-bottom: 6px;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
         line-height: 1.4;
+    }
+    .site-item:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    .site-detail {
+        font-size: 0.82rem;
+        opacity: 0.9;
+        display: block;
+        margin-top: 4px;
+        margin-left: 14px;
+        color: #E5E7EB;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -87,7 +102,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 5. FUNGSI UTAMA: PENCARIAN KOLOM, GRAFIK BERWARNA, & KARTU WARNA
+# 5. FUNGSI UTAMA: PENCARIAN KOLOM, GRAFIK BERWARNA, & DETAIL TANGGAL/REMARK
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -108,17 +123,31 @@ def cari_kolom_grup(kata_kunci_list):
 col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.columns[0]
 col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
+def ambil_info_tambahan(row, col_status, grup_kolom):
+    """Mendeteksi Tgl dan Remark khusus dari grup SOW terkait agar tidak tertukar dengan SOW lain."""
+    info_list = []
+    for col in grup_kolom:
+        # Abaikan kolom utama status & identitas site
+        if col == col_status or col in [col_site_id, col_site_name]:
+            continue
+        val = str(row.get(col, "")).strip()
+        if val and val.lower() not in ["nan", "none", "-", "", "nat"]:
+            info_list.append(f"<b>{col}:</b> {val}")
+    
+    if info_list:
+        return "<span class='site-detail'>↳ &nbsp;" + " &nbsp;|&nbsp; ".join(info_list) + "</span>"
+    return ""
+
 def buat_grafik_status_berwarna(series_data):
     """Membuat grafik batang (Altair) berwarna khusus untuk status Done, Progress, dan Plan."""
     df_chart = series_data.replace("", pd.NA).dropna().astype(str).value_counts().reset_index()
     df_chart.columns = ["Status", "Jumlah"]
     
-    # Skema pemetaan warna khusus status
     domain_warna = ["Done", "DONE", "Progress", "In Progress", "IN PROGRESS", "Plan", "PLAN", "Planning"]
     range_warna = [
-        "#10B981", "#10B981",  # Hijau Emerald untuk Done
-        "#F59E0B", "#F59E0B", "#F59E0B",  # Kuning Amber untuk Progress
-        "#8B5CF6", "#8B5CF6", "#8B5CF6"   # Ungu Modern untuk Plan
+        "#10B981", "#10B981",  # Hijau Emerald
+        "#F59E0B", "#F59E0B", "#F59E0B",  # Kuning Amber
+        "#8B5CF6", "#8B5CF6", "#8B5CF6"   # Ungu Modern
     ]
     
     chart = alt.Chart(df_chart).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=45).encode(
@@ -130,12 +159,12 @@ def buat_grafik_status_berwarna(series_data):
     
     st.altair_chart(chart, use_container_width=True)
 
-def tampilkan_catatan_status_site_berwarna(df_data, col_status):
-    """Menampilkan daftar site berdasar status menggunakan HTML Card yang berwarna rapi."""
+def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
+    """Menampilkan daftar site berdasar status + detail Tgl & Remark pada kartu Smart Notes."""
     if not col_status or col_status not in df_data.columns:
         return
     
-    st.markdown("##### 📌 Catatan Daftar Site berdasar Status")
+    st.markdown("##### 📌 Catatan Daftar Site berdasar Status (Tanggal & Remark)")
     
     kategori_done = df_data[df_data[col_status].astype(str).str.strip().str.upper() == "DONE"]
     kategori_prog = df_data[df_data[col_status].astype(str).str.strip().str.upper().isin(["IN PROGRESS", "PROGRESS", "ON PROGRESS"])]
@@ -150,7 +179,8 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status):
             for _, row in kategori_done.iterrows():
                 s_id = str(row.get(col_site_id, "")).strip()
                 s_name = str(row.get(col_site_name, "")).strip()
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}</div>"
+                detail_info = ambil_info_tambahan(row, col_status, grup_kolom)
+                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}{detail_info}</div>"
         else:
             items_html = "<div class='site-item'><i>Belum ada site selesai.</i></div>"
             
@@ -168,7 +198,8 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status):
             for _, row in kategori_prog.iterrows():
                 s_id = str(row.get(col_site_id, "")).strip()
                 s_name = str(row.get(col_site_name, "")).strip()
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}</div>"
+                detail_info = ambil_info_tambahan(row, col_status, grup_kolom)
+                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}{detail_info}</div>"
         else:
             items_html = "<div class='site-item'><i>Belum ada site in progress.</i></div>"
             
@@ -186,7 +217,8 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status):
             for _, row in kategori_plan.iterrows():
                 s_id = str(row.get(col_site_id, "")).strip()
                 s_name = str(row.get(col_site_name, "")).strip()
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}</div>"
+                detail_info = ambil_info_tambahan(row, col_status, grup_kolom)
+                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}{detail_info}</div>"
         else:
             items_html = "<div class='site-item'><i>Belum ada site berstatus plan.</i></div>"
             
@@ -203,7 +235,7 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status):
 menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
 
 # =============================================================================
-# MENU 1: DASHBOARD & ANALYTICS PER SOW (PREMIUM & COLORFUL)
+# MENU 1: DASHBOARD & ANALYTICS PER SOW (PREMIUM & SMART NOTES)
 # =============================================================================
 with menu_dash:
     st.subheader("📊 Dashboard Analytics per Scope of Work (SOW)")
@@ -224,6 +256,11 @@ with menu_dash:
         "⚙️ Dismantle Equipment", 
         "🚚 Relocation"
     ])
+    
+    # Definisi pengelompokan kolom agar tidak tertukar saat pembacaan Smart Notes
+    grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
+    grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
+    grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
     
     # --- DASHBOARD A: DISMANTLE TOWER ---
     with dash_tower:
@@ -249,7 +286,7 @@ with menu_dash:
         st.markdown("##### Sebaran Status Dismantle Tower:")
         if col_dt and col_dt in df_filter.columns:
             buat_grafik_status_berwarna(df_filter[col_dt])
-            tampilkan_catatan_status_site_berwarna(df_filter, col_dt)
+            tampilkan_catatan_status_site_berwarna(df_filter, col_dt, grup_tower_cols)
         else:
             st.info("ℹ️ Kolom 'Dismantle Tower' belum terdeteksi.")
             
@@ -282,7 +319,7 @@ with menu_dash:
             
         col_de = cari_nama_kolom("Dismantle Equipment")
         if col_de and col_de in df_filter.columns:
-            tampilkan_catatan_status_site_berwarna(df_filter, col_de)
+            tampilkan_catatan_status_site_berwarna(df_filter, col_de, grup_equip_cols)
             
     # --- DASHBOARD C: RELOCATION ---
     with dash_reloc:
@@ -303,7 +340,7 @@ with menu_dash:
         col_reloc = cari_nama_kolom("Relocation")
         if col_reloc and col_reloc in df_filter.columns:
             buat_grafik_status_berwarna(df_filter[col_reloc])
-            tampilkan_catatan_status_site_berwarna(df_filter, col_reloc)
+            tampilkan_catatan_status_site_berwarna(df_filter, col_reloc, grup_reloc_cols)
         else:
             st.info("ℹ️ Kolom 'Relocation' belum terdeteksi.")
 
@@ -393,9 +430,12 @@ with menu_editor:
     with tab4:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
         st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
-        grup_tower = cari_kolom_grup(["Dismantle Tower", "Tanggal Dismantle Tower", "Status Tower", "Tgl Tower"])
-        grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat"])
-        grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat"])
+        
+        # Kolom Tgl dan Remark sudah dikelompokkan masuk secara presisi ke sub-tab kerjanya
+        grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
+        grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
+        grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
+        
         semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
         
         if semua_kolom_sow:
