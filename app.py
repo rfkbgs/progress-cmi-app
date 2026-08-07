@@ -269,7 +269,8 @@ with menu_dash:
     ])
     
     grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-    grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
+    # Tenant sudah dihapus sementara dari pencarian kolom Equipment
+    grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
     grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
     
     # --- DASHBOARD A: DISMANTLE TOWER ---
@@ -300,36 +301,33 @@ with menu_dash:
         else:
             st.info("ℹ️ Kolom 'Dismantle Tower' belum terdeteksi.")
             
-    # --- DASHBOARD B: DISMANTLE EQUIPMENT ---
+    # --- DASHBOARD B: DISMANTLE EQUIPMENT (TANPA TENANT) ---
     with dash_equip:
-        st.markdown("#### 📈 Analytics: Dismantle Equipment & Tenant")
-        e1, e2 = st.columns(2)
+        st.markdown("#### 📈 Analytics: Dismantle Equipment")
+        e1, e2, e3 = st.columns(3)
         with e1:
-            st.metric("Total Equipment Target", len(df_filter))
-            
-        col_tenant = cari_nama_kolom("Tenant")
-        with e2:
-            if col_tenant and col_tenant in df_filter.columns:
-                st.metric("Jumlah Tenant / Operator", df_filter[col_tenant].replace("", pd.NA).dropna().nunique())
-            else:
-                st.metric("Jumlah Tenant / Operator", 0)
-                
-        st.markdown("##### Beban Kerja per Tenant / Operator:")
-        if col_tenant and col_tenant in df_filter.columns:
-            df_tenant = df_filter[col_tenant].replace("", pd.NA).dropna().astype(str).value_counts().reset_index()
-            df_tenant.columns = ["Tenant", "Jumlah"]
-            chart_tenant = alt.Chart(df_tenant).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, color="#3B82F6").encode(
-                x=alt.X("Tenant:N", title=None, axis=alt.Axis(labelAngle=0)),
-                y=alt.Y("Jumlah:Q", title="Jumlah Site"),
-                tooltip=["Tenant", "Jumlah"]
-            ).properties(height=260)
-            st.altair_chart(chart_tenant, use_container_width=True)
-        else:
-            st.info("ℹ️ Kolom 'Tenant' belum terdeteksi.")
+            st.metric("Total Site Target", len(df_filter))
             
         col_de = cari_nama_kolom("Dismantle Equipment")
+        with e2:
+            if col_de and col_de in df_filter.columns:
+                done_e = len(df_filter[df_filter[col_de].astype(str).str.upper() == "DONE"])
+                st.metric("Equipment Done", done_e)
+            else:
+                st.metric("Equipment Done", 0)
+        with e3:
+            if col_de and col_de in df_filter.columns:
+                sisa_e = len(df_filter) - done_e
+                st.metric("Progress", sisa_e)
+            else:
+                st.metric("Progress", len(df_filter))
+                
+        st.markdown("##### Sebaran Status Dismantle Equipment:")
         if col_de and col_de in df_filter.columns:
+            buat_grafik_status_berwarna(df_filter[col_de])
             tampilkan_catatan_status_site_berwarna(df_filter, col_de, grup_equip_cols)
+        else:
+            st.info("ℹ️ Kolom 'Dismantle Equipment' belum terdeteksi.")
             
     # --- DASHBOARD C: RELOCATION ---
     with dash_reloc:
@@ -439,10 +437,11 @@ with menu_editor:
 
     with tab4:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
-        st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
+        st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, ID Lama/Baru, dll).")
         
         grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-        grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
+        # Tenant dihapus dari pencarian form edit SOW
+        grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
         grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
         
         semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
@@ -465,7 +464,7 @@ with menu_editor:
                         st.info("ℹ️ Belum ada kolom khusus 'Dismantle Tower' yang terdeteksi.")
                 
                 with subtab_equip:
-                    st.markdown("#### ⚙️ Detail Equipment & Tenant")
+                    st.markdown("#### ⚙️ Detail Dismantle Equipment")
                     if grup_equipment:
                         cols_e = st.columns(2 if len(grup_equipment) <= 2 else 3)
                         for i, col_name in enumerate(grup_equipment):
@@ -473,7 +472,7 @@ with menu_editor:
                             with cols_e[i % 3]:
                                 input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_equip_{i}")
                     else:
-                        st.info("ℹ️ Belum ada kolom khusus 'Equipment / Tenant' yang terdeteksi.")
+                        st.info("ℹ️ Belum ada kolom khusus 'Dismantle Equipment' yang terdeteksi.")
                 
                 with subtab_reloc:
                     st.markdown("#### 🚚 Detail Relocation (Site ID Old / New)")
@@ -497,14 +496,12 @@ with menu_editor:
                                 df.at[idx_site, nama_col] = str(val_baru)
                             conn.update(data=df)
                             
-                            # Simpan pesan sukses ke session state agar tidak hilang saat rerun
                             st.session_state["notif"] = (
                                 "success", 
                                 f"✅ Berhasil mengupdate detail SOW untuk site: **{nama_site_terpilih}**!"
                             )
                             st.rerun()
                     except Exception as e:
-                        # Simpan pesan gagal ke session state jika error
                         st.session_state["notif"] = (
                             "error", 
                             f"❌ Gagal menyimpan perubahan progress SOW: {e}"
