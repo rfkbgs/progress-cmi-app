@@ -267,14 +267,26 @@ menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime E
 with menu_dash:
     st.subheader("📊 Dashboard Analytics per Scope of Work (SOW)")
     
-    # Filter Wilayah
-    prov_col = cari_nama_kolom("Provinsi")
-    if prov_col and prov_col in df.columns:
-        prov_list = ["Semua Provinsi"] + list(df[prov_col].dropna().unique())
-        pilih_prov = st.selectbox("🔍 Filter Wilayah (Provinsi):", prov_list, key="filter_prov_dash")
-        df_filter = df if pilih_prov == "Semua Provinsi" else df[df[prov_col] == pilih_prov]
-    else:
+    # --- SEARCH & FILTER BERDASARKAN SITE ID ---
+    daftar_site_dash = ["Semua Site ID"]
+    for _, row in df.iterrows():
+        val_id = str(row.get(col_site_id, "")).strip()
+        val_name = str(row.get(col_site_name, "")).strip()
+        if val_id or val_name:
+            daftar_site_dash.append(f"{val_id} — {val_name}")
+            
+    pilih_site_dash = st.selectbox(
+        "🔍 Cari & Filter berdasarkan Site ID (Ketik untuk mencari):",
+        options=daftar_site_dash,
+        key="filter_site_dash"
+    )
+    
+    if pilih_site_dash == "Semua Site ID":
         df_filter = df
+    else:
+        # Ambil kode ID di sebelah kiri tanda ' — '
+        id_terpilih = pilih_site_dash.split(" — ")[0].strip()
+        df_filter = df[df[col_site_id].astype(str).str.strip() == id_terpilih]
 
     st.divider()
     
@@ -532,7 +544,6 @@ with menu_editor:
                     try:
                         with st.spinner("⏳ Menyimpan tanggal SOW ke Google Sheets..."):
                             for nama_col, val_date in input_progress_baru.items():
-                                # Ubah objek kalender kembali menjadi teks format DD-MM-YYYY untuk disimpan ke Excel/Sheets
                                 if val_date is not None:
                                     val_str = val_date.strftime("%d-%m-%Y")
                                 else:
