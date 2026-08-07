@@ -109,21 +109,25 @@ with menu_dash:
         
         col_dt = cari_nama_kolom("Dismantle Tower")
         with c2:
-            if col_dt:
+            if col_dt and col_dt in df_filter.columns:
                 done_t = len(df_filter[df_filter[col_dt].astype(str).str.upper() == "DONE"])
                 st.metric("Tower Done", done_t)
             else:
                 st.metric("Tower Done", 0)
         with c3:
-            if col_dt:
+            if col_dt and col_dt in df_filter.columns:
                 sisa_t = len(df_filter) - done_t
-                st.metric("On Progress / Plan", sisa_t)
+                st.metric("Progress", sisa_t)
             else:
-                st.metric("On Progress / Plan", len(df_filter))
+                st.metric("Progress", len(df_filter))
                 
         st.markdown("##### Sebaran Status Dismantle Tower:")
         if col_dt and col_dt in df_filter.columns:
-            st.bar_chart(df_filter[col_dt].astype(str).value_counts())
+            data_chart = df_filter[col_dt].replace("", pd.NA).dropna()
+            if not data_chart.empty:
+                st.bar_chart(data_chart.astype(str).value_counts())
+            else:
+                st.info("ℹ️ Belum ada status Dismantle Tower yang diisi pada tabel.")
         else:
             st.info("ℹ️ Kolom 'Dismantle Tower' belum terdeteksi.")
             
@@ -137,19 +141,19 @@ with menu_dash:
         col_tenant = cari_nama_kolom("Tenant")
         with e2:
             if col_tenant and col_tenant in df_filter.columns:
-                st.metric("Jumlah Tenant / Operator", df_filter[col_tenant].nunique())
+                st.metric("Jumlah Tenant / Operator", df_filter[col_tenant].replace("", pd.NA).dropna().nunique())
             else:
                 st.metric("Jumlah Tenant / Operator", 0)
                 
         st.markdown("##### Beban Kerja per Tenant / Operator:")
         if col_tenant and col_tenant in df_filter.columns:
-            st.bar_chart(df_filter[col_tenant].astype(str).value_counts())
-        else:
-            col_de = cari_nama_kolom("Dismantle Equipment")
-            if col_de:
-                st.bar_chart(df_filter[col_de].astype(str).value_counts())
+            data_chart = df_filter[col_tenant].replace("", pd.NA).dropna()
+            if not data_chart.empty:
+                st.bar_chart(data_chart.astype(str).value_counts())
             else:
-                st.info("ℹ️ Kolom 'Tenant' atau 'Dismantle Equipment' belum terdeteksi.")
+                st.info("ℹ️ Belum ada data Tenant yang diisi pada tabel.")
+        else:
+            st.info("ℹ️ Kolom 'Tenant' belum terdeteksi.")
             
     # --- DASHBOARD C: RELOCATION ---
     with dash_reloc:
@@ -169,7 +173,11 @@ with menu_dash:
         st.markdown("##### Progress Status Relokasi:")
         col_reloc = cari_nama_kolom("Relocation")
         if col_reloc and col_reloc in df_filter.columns:
-            st.bar_chart(df_filter[col_reloc].astype(str).value_counts())
+            data_chart = df_filter[col_reloc].replace("", pd.NA).dropna()
+            if not data_chart.empty:
+                st.bar_chart(data_chart.astype(str).value_counts())
+            else:
+                st.info("ℹ️ Belum ada status Relocation yang diisi pada tabel.")
         else:
             st.info("ℹ️ Kolom 'Relocation' belum terdeteksi.")
 
