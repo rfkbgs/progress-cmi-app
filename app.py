@@ -8,7 +8,7 @@ from datetime import datetime, date
 # 1. KONFIGURASI HALAMAN & CUSTOM CSS
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Progress CMI - Dashboard & Editor",
+    page_title="PROJEK CMI - DASHBOARD",
     page_icon="📊",
     layout="wide"
 )
@@ -48,21 +48,20 @@ st.markdown("""
     .site-detail {
         font-size: 0.88rem;
         opacity: 0.95;
-        color: #E5E7EB;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Progress CMI - Dashboard & Realtime Editor")
-st.caption("Monitoring visual & update data proyek secara real-time (Google Sheets - Single Sheet).")
+st.title("📊 PROJEK CMI - DASHBOARD")
+st.caption("Sistem pemantauan visual dan pembaruan data lapangan terintegrasi secara real-time.")
 
 # -----------------------------------------------------------------------------
-# 2. SYSTEM NOTIFIKASI ATAS (TOAST & BANNER) SETELAH PROSES SIMPAN
+# 2. SYSTEM NOTIFIKASI (TOAST & BANNER) SETELAH PROSES SIMPAN
 # -----------------------------------------------------------------------------
 if "notif" in st.session_state:
     tipe, pesan = st.session_state.pop("notif")
     if tipe == "success":
-        st.toast("Data SOW berhasil disinkronkan ke Google Sheets!", icon="🎉")
+        st.toast("Data berhasil disinkronkan ke Google Sheets!", icon="🎉")
         st.success(pesan)
     elif tipe == "error":
         st.toast("Gagal menyimpan data ke Google Sheets!", icon="🚨")
@@ -76,16 +75,16 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # -----------------------------------------------------------------------------
 # 4. SIDEBAR (TOMBOL REFRESH)
 # -----------------------------------------------------------------------------
-st.sidebar.header("⚙️ Pengaturan")
-st.sidebar.caption("Google Sheets terhubung pada Sheet utama (Sheet tunggal).")
+st.sidebar.header("⚙️ Pengaturan Sistem")
+st.sidebar.caption("Terhubung ke Google Sheets (Sheet Tunggal).")
 
-if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
+if st.sidebar.button("🔄 Segarkan Data Terbaru", use_container_width=True):
     st.rerun()
 
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 5. MEMBACA DATA GOOGLE SHEETS (HEADER=0 / BARIS 1 SEBAGAI JUDUL KOLOM)
+# 5. MEMBACA DATA GOOGLE SHEETS
 # -----------------------------------------------------------------------------
 try:
     with st.spinner("Mengambil data dari Google Sheets..."):
@@ -100,7 +99,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & ANALYTICS PER SITE
+# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & PROGRESS PER SITE
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -149,7 +148,7 @@ def hitung_progress_site(row, grup_kolom):
     return pct, step_selesai, total_step
 
 def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
-    """Menampilkan Analytics Dashboard khusus untuk 1 Site ID terpilih secara bersih & elegan."""
+    """Menampilkan Dashboard Progres khusus untuk 1 Site ID terpilih."""
     kolom_valid = [col for col in grup_kolom if col in df.columns]
     if not kolom_valid:
         st.info(f"ℹ️ Kolom tahapan untuk {nama_sow} belum terdeteksi di tabel.")
@@ -161,15 +160,15 @@ def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
     if pct == 100:
         status_label = "🟢 DONE (100%)"
         card_class = "card-done"
-        color_hex = "#34D399"
+        color_hex = "#10B981"
     elif pct > 0:
         status_label = "🟡 PROGRESS"
         card_class = "card-progress"
-        color_hex = "#FBBF24"
+        color_hex = "#F59E0B"
     else:
         status_label = "🟣 PLAN (0%)"
         card_class = "card-plan"
-        color_hex = "#C084FC"
+        color_hex = "#8B5CF6"
 
     # --- 1. KPI CARDS ATAS ---
     c1, c2, c3 = st.columns(3)
@@ -185,7 +184,7 @@ def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
     st.progress(pct / 100.0)
     
     # --- 3. CHECKLIST TAHAPAN PEKERJAAN ---
-    st.markdown("##### 📋 Checklist Tahapan Pekerjaan:")
+    st.markdown("##### 📋 Status Tahapan Pekerjaan:")
     cols_step = st.columns(2 if len(kolom_valid) <= 2 else 3)
     for idx_col, col_name in enumerate(kolom_valid):
         val_tgl = str(row_site.get(col_name, "")).strip()
@@ -204,10 +203,10 @@ def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
     s_name = str(row_site.get(col_site_name, "")).strip()
     st.markdown(f"""
     <div class="{card_class}" style="margin-top: 15px;">
-        <div class="card-title" style="color: {color_hex};">📌 Status Aktual: {status_label}</div>
+        <div class="card-title" style="color: {color_hex};">📌 Ringkasan Status: {status_label}</div>
         <div class="site-detail">
             <b>Site ID:</b> {s_id} &nbsp;|&nbsp; <b>Nama Site:</b> {s_name}<br>
-            <b>Progress {nama_sow}:</b> {sel} dari {tot} tahapan telah selesai dikerjakan ({pct}%).
+            <b>Progress {nama_sow}:</b> {sel} dari {tot} tahapan selesai dikerjakan ({pct}%).
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -227,42 +226,39 @@ if not daftar_pilihan_site:
     st.warning("⚠️ Data Site tidak terdeteksi. Pastikan kolom Site ID atau Site Name di Google Sheets sudah terisi.")
     st.stop()
 
-# Dropdown utama di atas tabs
 pilihan_terpilih = st.selectbox(
-    "🔍 Pilih atau Ketik Site ID / Site Name untuk melihat Dashboard & Realtime Editor:",
+    "🔍 Pilih atau Ketik Site ID / Nama Site:",
     options=daftar_pilihan_site,
     format_func=lambda x: x[1],
-    index=None,  # Default kosong agar wajib memilih terlebih dahulu
-    placeholder="-- Pilih atau ketik Site ID di sini --",
+    index=None,
+    placeholder="-- Cari dan pilih Site ID / Nama Site --",
     key="select_global_site"
 )
 
-# Jika belum memilih site, berikan info dan hentikan render tabs di bawahnya
 if not pilihan_terpilih:
-    st.info("👈 Silakan pilih atau ketik **Site ID / Site Name** pada kotak di atas terlebih dahulu untuk menampilkan data Dashboard & Editor.")
+    st.info("👈 Silakan pilih **Site ID / Nama Site** pada kotak pencarian di atas untuk menampilkan Dashboard dan Realtime Editor.")
     st.stop()
 
-# Ambil data Site yang terpilih
 idx_site, nama_site_terpilih = pilihan_terpilih
 data_site = df.loc[idx_site]
 
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 8. MENU UTAMA: DASHBOARD vs REALTIME EDITOR (MENGGUNAKAN SITE TERPILIH)
+# 8. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
 # -----------------------------------------------------------------------------
-menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
+menu_dash, menu_editor = st.tabs(["📈 Dashboard", "📝 Realtime Editor"])
 
 # =============================================================================
-# MENU 1: DASHBOARD & ANALYTICS PER SOW
+# MENU 1: DASHBOARD PROGRES PER SOW
 # =============================================================================
 with menu_dash:
-    st.subheader(f"📊 Dashboard Analytics: **{nama_site_terpilih}**")
+    st.subheader(f"📊 Dashboard: **{nama_site_terpilih}**")
     
     dash_tower, dash_equip, dash_reloc = st.tabs([
-        "🏗️ Dismantle Tower (4 Tahapan)", 
-        "⚙️ Dismantle Equipment (4 Tahapan)", 
-        "🚚 Relocation (5 Tahapan)"
+        "🏗️ Dismantle Tower", 
+        "⚙️ Dismantle Equipment", 
+        "🚚 Relocation"
     ])
     
     grup_tower_cols = cari_kolom_grup(["Survey Tower", "Report Survey Tower", "Dismantle Tower", "BAST"])
@@ -270,33 +266,33 @@ with menu_dash:
     grup_reloc_cols = cari_kolom_grup(["Survey Relocation", "Report Survey Relocation", "Relocation", "OA", "ATP MS"])
     
     with dash_tower:
-        st.markdown("#### 📈 Analytics: Dismantle Tower")
+        st.markdown("#### 📈 Dismantle Tower")
         tampilkan_analytics_milestone_single_site(data_site, grup_tower_cols, "Dismantle Tower")
             
     with dash_equip:
-        st.markdown("#### 📈 Analytics: Dismantle Equipment")
+        st.markdown("#### 📈 Dismantle Equipment")
         tampilkan_analytics_milestone_single_site(data_site, grup_equip_cols, "Dismantle Equipment")
             
     with dash_reloc:
-        st.markdown("#### 📈 Analytics: Site Relocation")
+        st.markdown("#### 📈 Relocation")
         tampilkan_analytics_milestone_single_site(data_site, grup_reloc_cols, "Relocation")
 
 # =============================================================================
 # MENU 2: REALTIME EDITOR (EDIT DATA SITE TERPILIH)
 # =============================================================================
 with menu_editor:
-    st.subheader(f"📌 Edit Detail Site: **{nama_site_terpilih}**")
+    st.subheader(f"📌 Kelola Data Site: **{nama_site_terpilih}**")
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "🏢 Detail Information",
         "📑 Permit",
         "🛡️ HSE",
-        "🛠️ SOW (Scope of Work) — [EDITABLE]"
+        "🛠️ SOW"
     ])
 
     with tab1:
-        st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
-        st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
+        st.markdown("### 🏢 Detail Information *(Terkunci / Read-Only)*")
+        st.caption("Informasi teknis dan administratif site dikunci untuk menjaga keaslian data.")
         target_detail = ["Provinsi", "Kabupaten", "Address", "Lat", "Tower Height", "Tower Weight", "End Lease"]
         cols = st.columns(3)
         for i, kunci in enumerate(target_detail):
@@ -307,8 +303,8 @@ with menu_editor:
                 st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_detail_{idx_site}_{i}")
 
     with tab2:
-        st.markdown("### 📑 Permit *(Locked / Read-Only)*")
-        st.caption("Data perizinan site dilock agar tidak terjadi modifikasi secara tidak sengaja.")
+        st.markdown("### 📑 Permit *(Terkunci / Read-Only)*")
+        st.caption("Data perizinan site dikunci untuk menghindari perubahan tidak sengaja.")
         target_permit = ["Start-End", "Permit"]
         cols = st.columns(2)
         ditemukan = False
@@ -323,8 +319,8 @@ with menu_editor:
             st.info("ℹ️ Kolom terkait 'Permit' atau 'Start-End' tidak terdeteksi pada tabel.")
 
     with tab3:
-        st.markdown("### 🛡️ HSE *(Locked / Read-Only)*")
-        st.caption("Dokumen K3 dan Keselamatan Kerja dilock dari pengeditan umum.")
+        st.markdown("### 🛡️ HSE *(Terkunci / Read-Only)*")
+        st.caption("Dokumen K3 dan Keselamatan Kerja dikunci dari pengeditan umum.")
         target_hse = ["JSA", "HSE Plan", "SWP"]
         cols = st.columns(3)
         for i, kunci in enumerate(target_hse):
@@ -335,8 +331,8 @@ with menu_editor:
                 st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_hse_{idx_site}_{i}")
 
     with tab4:
-        st.markdown("### 🛠️ SOW (Scope of Work) — Edit Tanggal Tahapan Pekerjaan")
-        st.caption("Klik kotak input di bawah untuk membuka kalender dan memilih tanggal selesai per tahapan.")
+        st.markdown("### 🛠️ SOW — Pembaruan Tanggal Pekerjaan")
+        st.caption("Pilih tanggal selesai untuk setiap tahapan pekerjaan menggunakan kalender di bawah ini.")
         
         grup_tower = cari_kolom_grup(["Survey Tower", "Report Survey Tower", "Dismantle Tower", "BAST"])
         grup_equipment = cari_kolom_grup(["Survey Equipment", "Report Survey Equipment", "Dismantle Equipment", "Inbound Material"])
@@ -351,7 +347,7 @@ with menu_editor:
                 input_progress_baru = {}
                 
                 with subtab_tower:
-                    st.markdown("#### 🏗️ Tanggal Tahapan Dismantle Tower")
+                    st.markdown("#### 🏗️ Tahapan Dismantle Tower")
                     if grup_tower:
                         cols_t = st.columns(2 if len(grup_tower) <= 2 else 3)
                         for i, col_name in enumerate(grup_tower):
@@ -367,7 +363,7 @@ with menu_editor:
                         st.info("ℹ️ Kolom tahapan Dismantle Tower belum terdeteksi.")
                 
                 with subtab_equip:
-                    st.markdown("#### ⚙️ Tanggal Tahapan Dismantle Equipment")
+                    st.markdown("#### ⚙️ Tahapan Dismantle Equipment")
                     if grup_equipment:
                         cols_e = st.columns(2 if len(grup_equipment) <= 2 else 3)
                         for i, col_name in enumerate(grup_equipment):
@@ -383,7 +379,7 @@ with menu_editor:
                         st.info("ℹ️ Kolom tahapan Dismantle Equipment belum terdeteksi.")
                 
                 with subtab_reloc:
-                    st.markdown("#### 🚚 Tanggal Tahapan Relocation")
+                    st.markdown("#### 🚚 Tahapan Relocation")
                     if grup_relocation:
                         cols_r = st.columns(2 if len(grup_relocation) <= 2 else 3)
                         for i, col_name in enumerate(grup_relocation):
@@ -399,7 +395,7 @@ with menu_editor:
                         st.info("ℹ️ Kolom tahapan Relocation belum terdeteksi.")
                 
                 st.divider()
-                submit_sow = st.form_submit_button("💾 Simpan Tanggal SOW ke Google Sheets", type="primary", use_container_width=True)
+                submit_sow = st.form_submit_button("💾 Simpan Perubahan ke Google Sheets", type="primary", use_container_width=True)
                 
                 if submit_sow:
                     try:
@@ -415,13 +411,13 @@ with menu_editor:
                             
                             st.session_state["notif"] = (
                                 "success", 
-                                f"✅ Berhasil mengupdate tanggal SOW untuk site: **{nama_site_terpilih}**!"
+                                f"✅ Pembaruan tanggal SOW untuk site **{nama_site_terpilih}** berhasil disimpan!"
                             )
                             st.rerun()
                     except Exception as e:
                         st.session_state["notif"] = (
                             "error", 
-                            f"❌ Gagal menyimpan perubahan progress SOW: {e}"
+                            f"❌ Gagal menyimpan perubahan ke Google Sheets: {e}"
                         )
                         st.rerun()
         else:
