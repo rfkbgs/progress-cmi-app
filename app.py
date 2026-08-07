@@ -47,7 +47,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 5. FUNGSI PENCARIAN KOLOM YANG FLEKSIBEL (KEYWORD MATCHING)
+# 5. FUNGSI PENCARIAN KOLOM & TABEL DETAIL
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     """Mencari nama kolom asli di DataFrame yang mengandung kata kunci."""
@@ -71,13 +71,55 @@ def cari_kolom_grup(kata_kunci_list):
 col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.columns[0]
 col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
+def tampilkan_detail_site_per_status(df_data, col_status, kolom_grup, key_prefix):
+    """Menampilkan tabel daftar site secara detail berdasarkan filter status tertentu."""
+    if not col_status or col_status not in df_data.columns:
+        return
+    
+    st.markdown("---")
+    st.markdown("##### 📋 Detail Daftar Site & Status Pekerjaan")
+    
+    # Ambil daftar status unik yang ada di kolom tersebut
+    status_unik = sorted(list(set(
+        str(val).strip() 
+        for val in df_data[col_status].dropna() 
+        if str(val).strip() != ""
+    )))
+    
+    # Filter dropdown untuk memilih status (Done / Progress / Plan / Semua)
+    pilih_status = st.selectbox(
+        "🔍 Filter Daftar Site berdasar Status:",
+        options=["Semua Status"] + status_unik,
+        key=f"filter_tbl_{key_prefix}"
+    )
+    
+    if pilih_status == "Semua Status":
+        df_tampil = df_data.copy()
+    else:
+        df_tampil = df_data[df_data[col_status].astype(str).str.strip() == pilih_status]
+        
+    # Tentukan kolom apa saja yang muncul di tabel detail agar rapi & tidak kepanjangan
+    col_wajib = [c for c in [col_site_id, col_site_name, "Provinsi", "Kabupaten"] if c in df_tampil.columns]
+    col_tambahan = [c for c in kolom_grup if c in df_tampil.columns and c not in col_wajib]
+    col_final = col_wajib + col_tambahan
+    
+    if col_status not in col_final and col_status in df_tampil.columns:
+        col_final.append(col_status)
+        
+    st.dataframe(
+        df_tampil[col_final],
+        use_container_width=True,
+        hide_index=True
+    )
+    st.caption(f"Menampilkan **{len(df_tampil)}** site untuk filter: **{pilih_status}**")
+
 # -----------------------------------------------------------------------------
 # 6. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
 # -----------------------------------------------------------------------------
 menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
 
 # =============================================================================
-# MENU 1: DASHBOARD & ANALYTICS PER SOW
+# MENU 1: DASHBOARD & ANALYTICS PER SOW (DENGAN TABEL DETAIL)
 # =============================================================================
 with menu_dash:
     st.subheader("📊 Dashboard Analytics per Scope of Work (SOW)")
@@ -128,6 +170,10 @@ with menu_dash:
                 st.bar_chart(data_chart.astype(str).value_counts())
             else:
                 st.info("ℹ️ Belum ada status Dismantle Tower yang diisi pada tabel.")
+                
+            # --- TABEL DETAIL DISMANTLE TOWER ---
+            grup_tower_dash = cari_kolom_grup(["Dismantle Tower", "Tanggal Dismantle Tower", "Status Tower", "Tgl Tower"])
+            tampilkan_detail_site_per_status(df_filter, col_dt, grup_tower_dash, "dt")
         else:
             st.info("ℹ️ Kolom 'Dismantle Tower' belum terdeteksi.")
             
@@ -155,6 +201,12 @@ with menu_dash:
         else:
             st.info("ℹ️ Kolom 'Tenant' belum terdeteksi.")
             
+        # --- TABEL DETAIL DISMANTLE EQUIPMENT ---
+        col_de = cari_nama_kolom("Dismantle Equipment") or col_tenant
+        grup_equip_dash = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat"])
+        if col_de and col_de in df_filter.columns:
+            tampilkan_detail_site_per_status(df_filter, col_de, grup_equip_dash, "de")
+            
     # --- DASHBOARD C: RELOCATION ---
     with dash_reloc:
         st.markdown("#### 📈 Analytics: Site Relocation")
@@ -178,6 +230,10 @@ with menu_dash:
                 st.bar_chart(data_chart.astype(str).value_counts())
             else:
                 st.info("ℹ️ Belum ada status Relocation yang diisi pada tabel.")
+                
+            # --- TABEL DETAIL RELOCATION ---
+            grup_reloc_dash = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat"])
+            tampilkan_detail_site_per_status(df_filter, col_reloc, grup_reloc_dash, "rel")
         else:
             st.info("ℹ️ Kolom 'Relocation' belum terdeteksi.")
 
@@ -306,7 +362,6 @@ with menu_editor:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
         st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
         
-        # Klasifikasi kolom ke 3 sub-grup SOW berdasarkan kata kunci di namanya
         grup_tower = cari_kolom_grup(["Dismantle Tower", "Tanggal Dismantle Tower", "Status Tower", "Tgl Tower"])
         grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat"])
         grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat"])
