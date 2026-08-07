@@ -213,43 +213,51 @@ def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
     """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 7. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
+# 7. PILIHAN SITE GLOBAL (1 KALI PILIH UNTUK DASHBOARD & EDITOR)
+# -----------------------------------------------------------------------------
+daftar_pilihan_site = []
+for idx, row in df.iterrows():
+    val_id = str(row.get(col_site_id, "")).strip()
+    val_name = str(row.get(col_site_name, "")).strip()
+    if val_id or val_name:
+        label_tampil = f"{val_id}  —  {val_name}"
+        daftar_pilihan_site.append((idx, label_tampil))
+
+if not daftar_pilihan_site:
+    st.warning("⚠️ Data Site tidak terdeteksi. Pastikan kolom Site ID atau Site Name di Google Sheets sudah terisi.")
+    st.stop()
+
+# Dropdown utama di atas tabs
+pilihan_terpilih = st.selectbox(
+    "🔍 Pilih atau Ketik Site ID / Site Name untuk melihat Dashboard & Realtime Editor:",
+    options=daftar_pilihan_site,
+    format_func=lambda x: x[1],
+    index=None,  # Default kosong agar wajib memilih terlebih dahulu
+    placeholder="-- Pilih atau ketik Site ID di sini --",
+    key="select_global_site"
+)
+
+# Jika belum memilih site, berikan info dan hentikan render tabs di bawahnya
+if not pilihan_terpilih:
+    st.info("👈 Silakan pilih atau ketik **Site ID / Site Name** pada kotak di atas terlebih dahulu untuk menampilkan data Dashboard & Editor.")
+    st.stop()
+
+# Ambil data Site yang terpilih
+idx_site, nama_site_terpilih = pilihan_terpilih
+data_site = df.loc[idx_site]
+
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 8. MENU UTAMA: DASHBOARD vs REALTIME EDITOR (MENGGUNAKAN SITE TERPILIH)
 # -----------------------------------------------------------------------------
 menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
 
 # =============================================================================
-# MENU 1: DASHBOARD & ANALYTICS PER SOW (MANDATORY SINGLE-SITE VIEW)
+# MENU 1: DASHBOARD & ANALYTICS PER SOW
 # =============================================================================
 with menu_dash:
-    st.subheader("📊 Dashboard Analytics per Scope of Work (SOW)")
-    
-    # --- SEARCH & FILTER WAJIB PILIH 1 SITE ID (TANPA 'SEMUA SITE') ---
-    daftar_site_dash = []
-    for _, row in df.iterrows():
-        val_id = str(row.get(col_site_id, "")).strip()
-        val_name = str(row.get(col_site_name, "")).strip()
-        if val_id or val_name:
-            daftar_site_dash.append(f"{val_id} — {val_name}")
-            
-    pilih_site_dash = st.selectbox(
-        "🔍 Cari & Pilih Site ID untuk melihat Dashboard (Ketik untuk mencari):",
-        options=daftar_site_dash,
-        index=None,  # Default kosong agar user wajib memilih
-        placeholder="-- Pilih atau ketik Site ID di sini --",
-        key="filter_site_dash"
-    )
-    
-    # JIKA USER BELUM MEMILIH SITE, TAMPILKAN INFO DAN HENTIKAN RENDER
-    if not pilih_site_dash:
-        st.info("👈 Silakan pilih atau ketik **Site ID** pada kotak di atas terlebih dahulu untuk menampilkan data Dashboard & Checklist.")
-        st.stop()
-
-    # Ambil data 1 baris untuk site yang dipilih
-    id_terpilih = pilih_site_dash.split(" — ")[0].strip()
-    df_filter = df[df[col_site_id].astype(str).str.strip() == id_terpilih]
-    row_terpilih = df_filter.iloc[0]
-
-    st.divider()
+    st.subheader(f"📊 Dashboard Analytics: **{nama_site_terpilih}**")
     
     dash_tower, dash_equip, dash_reloc = st.tabs([
         "🏗️ Dismantle Tower (4 Tahapan)", 
@@ -263,55 +271,21 @@ with menu_dash:
     
     with dash_tower:
         st.markdown("#### 📈 Analytics: Dismantle Tower")
-        tampilkan_analytics_milestone_single_site(row_terpilih, grup_tower_cols, "Dismantle Tower")
+        tampilkan_analytics_milestone_single_site(data_site, grup_tower_cols, "Dismantle Tower")
             
     with dash_equip:
         st.markdown("#### 📈 Analytics: Dismantle Equipment")
-        tampilkan_analytics_milestone_single_site(row_terpilih, grup_equip_cols, "Dismantle Equipment")
+        tampilkan_analytics_milestone_single_site(data_site, grup_equip_cols, "Dismantle Equipment")
             
     with dash_reloc:
         st.markdown("#### 📈 Analytics: Site Relocation")
-        tampilkan_analytics_milestone_single_site(row_terpilih, grup_reloc_cols, "Relocation")
+        tampilkan_analytics_milestone_single_site(data_site, grup_reloc_cols, "Relocation")
 
 # =============================================================================
-# MENU 2: REALTIME EDITOR (GATE 1 & GATE 2 - WAJIB PILIH SITE)
+# MENU 2: REALTIME EDITOR (EDIT DATA SITE TERPILIH)
 # =============================================================================
 with menu_editor:
-    st.subheader("🔍 Gate 1: Pilih Site ID / Site Name")
-
-    daftar_pilihan_site = []
-    for idx, row in df.iterrows():
-        val_id = str(row.get(col_site_id, "")).strip()
-        val_name = str(row.get(col_site_name, "")).strip()
-        if val_id or val_name:
-            label_tampil = f"{val_id}  —  {val_name}"
-            daftar_pilihan_site.append((idx, label_tampil))
-
-    if not daftar_pilihan_site:
-        st.warning("⚠️ Data Site tidak terdeteksi. Pastikan kolom Site ID atau Site Name di Google Sheets sudah terisi.")
-        st.stop()
-
-    # Default kosong agar user wajib memilih terlebih dahulu
-    pilihan_terpilih = st.selectbox(
-        "Pilih Site yang ingin dilihat atau diedit (Ketik untuk mencari):",
-        options=daftar_pilihan_site,
-        format_func=lambda x: x[1],
-        index=None,
-        placeholder="-- Pilih atau ketik Site ID di sini --",
-        key="select_gate_site"
-    )
-
-    # JIKA USER BELUM MEMILIH SITE, TAMPILKAN INFO DAN HENTIKAN RENDER
-    if not pilihan_terpilih:
-        st.info("👈 Silakan pilih atau ketik **Site ID** pada kotak di atas terlebih dahulu untuk melihat dan mengedit detail Site.")
-        st.stop()
-
-    idx_site, nama_site_terpilih = pilihan_terpilih
-
-    st.divider()
-    data_site = df.loc[idx_site]
-
-    st.subheader(f"📌 Detail Site: **{nama_site_terpilih}**")
+    st.subheader(f"📌 Edit Detail Site: **{nama_site_terpilih}**")
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "🏢 Detail Information",
