@@ -71,12 +71,24 @@ st.title("📊 Progress CMI - Dashboard & Realtime Editor")
 st.caption("Monitoring visual & update data proyek secara real-time (Google Sheets - Single Sheet).")
 
 # -----------------------------------------------------------------------------
-# 2. INISIALISASI KONEKSI KE GOOGLE SHEETS
+# 2. SYSTEM NOTIFIKASI ATAS (TOAST & BANNER) SETELAH PROSES SIMPAN
+# -----------------------------------------------------------------------------
+if "notif" in st.session_state:
+    tipe, pesan = st.session_state.pop("notif")
+    if tipe == "success":
+        st.toast("Data SOW berhasil disinkronkan ke Google Sheets!", icon="🎉")
+        st.success(pesan)
+    elif tipe == "error":
+        st.toast("Gagal menyimpan data ke Google Sheets!", icon="🚨")
+        st.error(pesan)
+
+# -----------------------------------------------------------------------------
+# 3. INISIALISASI KONEKSI KE GOOGLE SHEETS
 # -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # -----------------------------------------------------------------------------
-# 3. SIDEBAR (TOMBOL REFRESH)
+# 4. SIDEBAR (TOMBOL REFRESH)
 # -----------------------------------------------------------------------------
 st.sidebar.header("⚙️ Pengaturan")
 st.sidebar.caption("Google Sheets terhubung pada Sheet utama (Sheet tunggal).")
@@ -87,7 +99,7 @@ if st.sidebar.button("🔄 Refresh Data Terbaru", use_container_width=True):
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. MEMBACA DATA GOOGLE SHEETS (HEADER=0 / BARIS 1 SEBAGAI JUDUL KOLOM)
+# 5. MEMBACA DATA GOOGLE SHEETS (HEADER=0 / BARIS 1 SEBAGAI JUDUL KOLOM)
 # -----------------------------------------------------------------------------
 try:
     with st.spinner("Mengambil data dari Google Sheets..."):
@@ -102,7 +114,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 5. FUNGSI UTAMA: PENCARIAN KOLOM, GRAFIK BERWARNA, & DETAIL TANGGAL/REMARK
+# 6. FUNGSI UTAMA: PENCARIAN KOLOM, GRAFIK BERWARNA, & DETAIL TANGGAL/REMARK
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -127,7 +139,6 @@ def ambil_info_tambahan(row, col_status, grup_kolom):
     """Mendeteksi Tgl dan Remark khusus dari grup SOW terkait agar tidak tertukar dengan SOW lain."""
     info_list = []
     for col in grup_kolom:
-        # Abaikan kolom utama status & identitas site
         if col == col_status or col in [col_site_id, col_site_name]:
             continue
         val = str(row.get(col, "")).strip()
@@ -230,7 +241,7 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
         """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 6. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
+# 7. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
 # -----------------------------------------------------------------------------
 menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
 
@@ -257,7 +268,6 @@ with menu_dash:
         "🚚 Relocation"
     ])
     
-    # Definisi pengelompokan kolom agar tidak tertukar saat pembacaan Smart Notes
     grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
     grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
     grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
@@ -431,7 +441,6 @@ with menu_editor:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
         st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Tenant, ID Lama/Baru, dll).")
         
-        # Kolom Tgl dan Remark sudah dikelompokkan masuk secara presisi ke sub-tab kerjanya
         grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
         grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Tenant", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
         grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Site Id Old", "Site Id New", "Old", "New", "Alamat", "Tgl Relocation", "Remark Relocation"])
@@ -479,16 +488,27 @@ with menu_editor:
                 
                 st.divider()
                 submit_sow = st.form_submit_button("💾 Simpan Seluruh Update SOW ke Google Sheets", type="primary", use_container_width=True)
+                
                 if submit_sow:
                     try:
-                        with st.spinner("Menyimpan seluruh data SOW ke Google Sheets..."):
+                        with st.spinner("⏳ Menyimpan seluruh data SOW ke Google Sheets..."):
                             for nama_col, val_baru in input_progress_baru.items():
                                 df[nama_col] = df[nama_col].astype(str)
                                 df.at[idx_site, nama_col] = str(val_baru)
                             conn.update(data=df)
-                            st.success(f"✅ Berhasil mengupdate detail SOW pada site: {nama_site_terpilih}!")
+                            
+                            # Simpan pesan sukses ke session state agar tidak hilang saat rerun
+                            st.session_state["notif"] = (
+                                "success", 
+                                f"✅ Berhasil mengupdate detail SOW untuk site: **{nama_site_terpilih}**!"
+                            )
                             st.rerun()
                     except Exception as e:
-                        st.error(f"❌ Gagal menyimpan perubahan progress SOW: {e}")
+                        # Simpan pesan gagal ke session state jika error
+                        st.session_state["notif"] = (
+                            "error", 
+                            f"❌ Gagal menyimpan perubahan progress SOW: {e}"
+                        )
+                        st.rerun()
         else:
             st.warning("⚠️ Tidak ada kolom SOW yang terdeteksi di Baris 1 Google Sheets.")
