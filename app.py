@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
+from datetime import datetime, date
 
 # -----------------------------------------------------------------------------
 # 1. KONFIGURASI HALAMAN & CUSTOM CSS
@@ -114,7 +115,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 6. FUNGSI UTAMA: PENCARIAN KOLOM, GRAFIK BERWARNA, & DETAIL TANGGAL/REMARK
+# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & SMART NOTES
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -135,8 +136,23 @@ def cari_kolom_grup(kata_kunci_list):
 col_site_id = cari_nama_kolom("Site Id") or cari_nama_kolom("Site ID") or df.columns[0]
 col_site_name = cari_nama_kolom("Site Name") or (df.columns[1] if len(df.columns) > 1 else df.columns[0])
 
+def parse_tanggal_ke_date(val):
+    """Menerjemahkan teks dari Google Sheets menjadi objek tanggal untuk kalender pop-up."""
+    if pd.isna(val):
+        return None
+    val_str = str(val).strip()
+    if val_str in ["", "-", "nan", "None", "NaT"]:
+        return None
+    try:
+        dt = pd.to_datetime(val_str, dayfirst=True, errors="coerce")
+        if pd.notna(dt):
+            return dt.date()
+    except:
+        pass
+    return None
+
 def ambil_info_tambahan(row, col_status, grup_kolom):
-    """Mendeteksi Tgl dan Remark khusus dari grup SOW terkait agar tidak tertukar dengan SOW lain."""
+    """Mendeteksi seluruh tahapan milestone di grup SOW terkait untuk ditampilkan di Smart Notes."""
     info_list = []
     for col in grup_kolom:
         if col == col_status or col in [col_site_id, col_site_name]:
@@ -171,11 +187,11 @@ def buat_grafik_status_berwarna(series_data):
     st.altair_chart(chart, use_container_width=True)
 
 def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
-    """Menampilkan daftar site berdasar status + detail Tgl & Remark pada kartu Smart Notes."""
+    """Menampilkan daftar site berdasar status + detail tahapan pada kartu Smart Notes."""
     if not col_status or col_status not in df_data.columns:
         return
     
-    st.markdown("##### 📌 Catatan Daftar Site berdasar Status (Tanggal & Remark)")
+    st.markdown("##### 📌 Catatan Daftar Site & Tahapan Pekerjaan")
     
     kategori_done = df_data[df_data[col_status].astype(str).str.strip().str.upper() == "DONE"]
     kategori_prog = df_data[df_data[col_status].astype(str).str.strip().str.upper().isin(["IN PROGRESS", "PROGRESS", "ON PROGRESS"])]
@@ -183,7 +199,7 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
     
     col1, col2, col3 = st.columns(3)
     
-    # --- KARTU 1: DONE (HIJAU EMERALD) ---
+    # --- KARTU 1: DONE ---
     with col1:
         items_html = ""
         if not kategori_done.empty:
@@ -202,7 +218,7 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
         </div>
         """, unsafe_allow_html=True)
                 
-    # --- KARTU 2: PROGRESS (KUNING AMBER) ---
+    # --- KARTU 2: PROGRESS ---
     with col2:
         items_html = ""
         if not kategori_prog.empty:
@@ -221,7 +237,7 @@ def tampilkan_catatan_status_site_berwarna(df_data, col_status, grup_kolom):
         </div>
         """, unsafe_allow_html=True)
                 
-    # --- KARTU 3: PLAN / LAINNYA (UNGU MODERN) ---
+    # --- KARTU 3: PLAN / LAINNYA ---
     with col3:
         items_html = ""
         if not kategori_plan.empty:
@@ -268,9 +284,9 @@ with menu_dash:
         "🚚 Relocation"
     ])
     
-    grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-    grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-    grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
+    grup_tower_cols = cari_kolom_grup(["Survey Tower", "Report Survey Tower", "Dismantle Tower", "BAST"])
+    grup_equip_cols = cari_kolom_grup(["Survey Equipment", "Report Survey Equipment", "Dismantle Equipment", "Inbound Material"])
+    grup_reloc_cols = cari_kolom_grup(["Survey Relocation", "Report Survey Relocation", "Relocation", "OA", "ATP MS"])
     
     # --- DASHBOARD A: DISMANTLE TOWER ---
     with dash_tower:
@@ -399,7 +415,6 @@ with menu_editor:
         "🛠️ SOW (Scope of Work) — [EDITABLE]"
     ])
 
-    # Kunci setiap input ditambahkan '_{idx_site}' agar mereset nilai saat site diganti
     with tab1:
         st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
         st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
@@ -440,69 +455,95 @@ with menu_editor:
             with cols[i % 3]:
                 st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_hse_{idx_site}_{i}")
 
+    # =========================================================================
+    # TAB 4: SOW DENGAN INPUT KALENDER POP-UP (DATE INPUT)
+    # =========================================================================
     with tab4:
-        st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
-        st.caption("Pilih kategori pekerjaan di bawah ini untuk mengedit data detail (Tanggal, Remark, dll).")
+        st.markdown("### 🛠️ SOW (Scope of Work) — Edit Tanggal Tahapan Pekerjaan")
+        st.caption("Klik kotak input di bawah untuk membuka kalender dan memilih tanggal selesai per tahapan.")
         
-        grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
-        grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-        grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
+        grup_tower = cari_kolom_grup(["Survey Tower", "Report Survey Tower", "Dismantle Tower", "BAST"])
+        grup_equipment = cari_kolom_grup(["Survey Equipment", "Report Survey Equipment", "Dismantle Equipment", "Inbound Material"])
+        grup_relocation = cari_kolom_grup(["Survey Relocation", "Report Survey Relocation", "Relocation", "OA", "ATP MS"])
         
         semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
         
         if semua_kolom_sow:
             with st.form("form_update_sow_berlapis"):
-                st.write(f"✏️ **Form Edit SOW Lengkap: {nama_site_terpilih}**")
+                st.write(f"📅 **Form Input Tanggal SOW: {nama_site_terpilih}**")
                 subtab_tower, subtab_equip, subtab_reloc = st.tabs(["🏗️ Dismantle Tower", "⚙️ Dismantle Equipment", "🚚 Relocation"])
                 input_progress_baru = {}
                 
+                # --- SUB-TAB 1: DISMANTLE TOWER ---
                 with subtab_tower:
-                    st.markdown("#### 🏗️ Detail Dismantle Tower")
+                    st.markdown("#### 🏗️ Tanggal Tahapan Dismantle Tower")
                     if grup_tower:
                         cols_t = st.columns(2 if len(grup_tower) <= 2 else 3)
                         for i, col_name in enumerate(grup_tower):
-                            val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                            val_lama_dt = parse_tanggal_ke_date(data_site[col_name])
                             with cols_t[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_tower_{idx_site}_{i}")
+                                input_progress_baru[col_name] = st.date_input(
+                                    label=f"📅 {col_name}",
+                                    value=val_lama_dt,
+                                    format="DD/MM/YYYY",
+                                    key=f"edit_tower_{idx_site}_{i}"
+                                )
                     else:
-                        st.info("ℹ️ Belum ada kolom khusus 'Dismantle Tower' yang terdeteksi.")
+                        st.info("ℹ️ Kolom tahapan Dismantle Tower belum terdeteksi.")
                 
+                # --- SUB-TAB 2: DISMANTLE EQUIPMENT ---
                 with subtab_equip:
-                    st.markdown("#### ⚙️ Detail Dismantle Equipment")
+                    st.markdown("#### ⚙️ Tanggal Tahapan Dismantle Equipment")
                     if grup_equipment:
                         cols_e = st.columns(2 if len(grup_equipment) <= 2 else 3)
                         for i, col_name in enumerate(grup_equipment):
-                            val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                            val_lama_dt = parse_tanggal_ke_date(data_site[col_name])
                             with cols_e[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_equip_{idx_site}_{i}")
+                                input_progress_baru[col_name] = st.date_input(
+                                    label=f"📅 {col_name}",
+                                    value=val_lama_dt,
+                                    format="DD/MM/YYYY",
+                                    key=f"edit_equip_{idx_site}_{i}"
+                                )
                     else:
-                        st.info("ℹ️ Belum ada kolom khusus 'Dismantle Equipment' yang terdeteksi.")
+                        st.info("ℹ️ Kolom tahapan Dismantle Equipment belum terdeteksi.")
                 
+                # --- SUB-TAB 3: RELOCATION ---
                 with subtab_reloc:
-                    st.markdown("#### 🚚 Detail Relocation")
+                    st.markdown("#### 🚚 Tanggal Tahapan Relocation")
                     if grup_relocation:
                         cols_r = st.columns(2 if len(grup_relocation) <= 2 else 3)
                         for i, col_name in enumerate(grup_relocation):
-                            val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
+                            val_lama_dt = parse_tanggal_ke_date(data_site[col_name])
                             with cols_r[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_reloc_{idx_site}_{i}")
+                                input_progress_baru[col_name] = st.date_input(
+                                    label=f"📅 {col_name}",
+                                    value=val_lama_dt,
+                                    format="DD/MM/YYYY",
+                                    key=f"edit_reloc_{idx_site}_{i}"
+                                )
                     else:
-                        st.info("ℹ️ Belum ada kolom khusus 'Relocation' yang terdeteksi.")
+                        st.info("ℹ️ Kolom tahapan Relocation belum terdeteksi.")
                 
                 st.divider()
-                submit_sow = st.form_submit_button("💾 Simpan Seluruh Update SOW ke Google Sheets", type="primary", use_container_width=True)
+                submit_sow = st.form_submit_button("💾 Simpan Tanggal SOW ke Google Sheets", type="primary", use_container_width=True)
                 
                 if submit_sow:
                     try:
-                        with st.spinner("⏳ Menyimpan seluruh data SOW ke Google Sheets..."):
-                            for nama_col, val_baru in input_progress_baru.items():
+                        with st.spinner("⏳ Menyimpan tanggal SOW ke Google Sheets..."):
+                            for nama_col, val_date in input_progress_baru.items():
+                                # Ubah objek kalender kembali menjadi teks format DD-MM-YYYY untuk disimpan ke Excel/Sheets
+                                if val_date is not None:
+                                    val_str = val_date.strftime("%d-%m-%Y")
+                                else:
+                                    val_str = ""
                                 df[nama_col] = df[nama_col].astype(str)
-                                df.at[idx_site, nama_col] = str(val_baru)
+                                df.at[idx_site, nama_col] = val_str
                             conn.update(data=df)
                             
                             st.session_state["notif"] = (
                                 "success", 
-                                f"✅ Berhasil mengupdate detail SOW untuk site: **{nama_site_terpilih}**!"
+                                f"✅ Berhasil mengupdate tanggal SOW untuk site: **{nama_site_terpilih}**!"
                             )
                             st.rerun()
                     except Exception as e:
