@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
+from datetime import datetime, date
 
 # -----------------------------------------------------------------------------
 # 1. KONFIGURASI HALAMAN & CUSTOM CSS
@@ -12,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS untuk Kartu Catatan (Smart Notes) & Checklist Tahapan
+# Custom CSS untuk tampilan Checklist & Kartu Status yang modern
 st.markdown("""
 <style>
     .card-done {
@@ -42,26 +43,11 @@ st.markdown("""
     .card-title {
         font-weight: 700;
         font-size: 1.05rem;
-        margin-bottom: 12px;
-    }
-    .site-item {
-        font-size: 0.92rem;
-        margin-bottom: 10px;
-        padding-bottom: 8px;
-        border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
-        line-height: 1.4;
-    }
-    .site-item:last-child {
-        border-bottom: none;
-        margin-bottom: 0;
-        padding-bottom: 0;
+        margin-bottom: 8px;
     }
     .site-detail {
-        font-size: 0.82rem;
+        font-size: 0.88rem;
         opacity: 0.95;
-        display: block;
-        margin-top: 4px;
-        margin-left: 14px;
         color: #E5E7EB;
     }
 </style>
@@ -114,7 +100,7 @@ if df.empty:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & PERHITUNGAN PERSENTASE
+# 6. FUNGSI UTAMA: PENCARIAN KOLOM, PARSER TANGGAL, & ANALYTICS PER SITE
 # -----------------------------------------------------------------------------
 def cari_nama_kolom(kata_kunci):
     for col in df.columns:
@@ -162,116 +148,69 @@ def hitung_progress_site(row, grup_kolom):
     pct = int((step_selesai / total_step) * 100)
     return pct, step_selesai, total_step
 
-def tampilkan_analytics_milestone(df_data, grup_kolom, nama_sow):
-    """Menampilkan Analytics Dashboard berdasar persentase tahapan (Milestones)."""
-    kolom_valid = [col for col in grup_kolom if col in df_data.columns]
+def tampilkan_analytics_milestone_single_site(row_site, grup_kolom, nama_sow):
+    """Menampilkan Analytics Dashboard khusus untuk 1 Site ID terpilih secara bersih & elegan."""
+    kolom_valid = [col for col in grup_kolom if col in df.columns]
     if not kolom_valid:
         st.info(f"ℹ️ Kolom tahapan untuk {nama_sow} belum terdeteksi di tabel.")
         return
 
-    # Hitung progress untuk seluruh baris di DataFrame yang sedang dimuat/difilter
-    list_pct = []
-    list_selesai = []
-    for _, row in df_data.iterrows():
-        pct, sel, _ = hitung_progress_site(row, kolom_valid)
-        list_pct.append(pct)
-        list_selesai.append(sel)
-        
-    df_temp = df_data.copy()
-    df_temp["_Progress_Pct"] = list_pct
-    df_temp["_Step_Done"] = list_selesai
+    pct, sel, tot = hitung_progress_site(row_site, kolom_valid)
     
-    # Kategori Otomatis berdasarkan %
-    done_sites = df_temp[df_temp["_Progress_Pct"] == 100]
-    prog_sites = df_temp[(df_temp["_Progress_Pct"] > 0) & (df_temp["_Progress_Pct"] < 100)]
-    plan_sites = df_temp[df_temp["_Progress_Pct"] == 0]
+    # Penentuan status & warna badge
+    if pct == 100:
+        status_label = "🟢 DONE (100%)"
+        card_class = "card-done"
+        color_hex = "#34D399"
+    elif pct > 0:
+        status_label = "🟡 PROGRESS"
+        card_class = "card-progress"
+        color_hex = "#FBBF24"
+    else:
+        status_label = "🟣 PLAN (0%)"
+        card_class = "card-plan"
+        color_hex = "#C084FC"
 
-    # --- 1. KPI CARDS ---
+    # --- 1. KPI CARDS ATAS ---
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Total Site Target", len(df_temp))
+        st.metric("Status Progres", status_label)
     with c2:
-        st.metric("Site 100% Selesai (DONE)", len(done_sites))
+        st.metric("Tingkat Penyelesaian", f"{pct}%")
     with c3:
-        avg_pct = int(sum(list_pct) / len(list_pct)) if list_pct else 0
-        st.metric("Rata-rata Progress (%)", f"{avg_pct}%")
+        st.metric("Tahapan Selesai", f"{sel} dari {tot} Tahapan")
 
-    # --- 2. TAMPILAN KHUSUS JIKA HANYA 1 SITE YANG DIPILIH ---
-    if len(df_temp) == 1:
-        row_site = df_temp.iloc[0]
-        pct_1 = row_site["_Progress_Pct"]
-        sel_1 = row_site["_Step_Done"]
-        tot_1 = len(kolom_valid)
-        
-        st.markdown(f"##### 🎯 Progress Penyelesaian Site: **{pct_1}%** ({sel_1} dari {tot_1} Tahapan Selesai)")
-        st.progress(pct_1 / 100.0)
-        
-        st.markdown("##### 📋 Checklist Tahapan Pekerjaan:")
-        cols_step = st.columns(2 if len(kolom_valid) <= 2 else 3)
-        for idx_col, col_name in enumerate(kolom_valid):
-            val_tgl = str(row_site.get(col_name, "")).strip()
-            with cols_step[idx_col % len(cols_step)]:
-                if is_terisi(val_tgl):
-                    with st.container(border=True):
-                        st.markdown(f"✅ **{col_name}**")
-                        st.caption(f"Selesai: `{val_tgl}`")
-                else:
-                    with st.container(border=True):
-                        st.markdown(f"⏳ **{col_name}**")
-                        st.caption("*Belum ada tanggal*")
-                        
-    # --- 3. TAMPILAN GRAFIK SEBARAN JIKA SEMUA / BANYAK SITE DIPILIH ---
-    else:
-        st.markdown(f"##### Sebaran Persentase Progress {nama_sow}:")
-        df_chart = df_temp["_Progress_Pct"].value_counts().reset_index()
-        df_chart.columns = ["Progress (%)", "Jumlah Site"]
-        df_chart["Label Progress"] = df_chart["Progress (%)"].astype(str) + "%"
-        
-        chart = alt.Chart(df_chart).mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6, size=45, color="#3B82F6").encode(
-            x=alt.X("Label Progress:N", title="Tingkat Penyelesaian (%)", sort=alt.EncodingSortField(field="Progress (%)", order="ascending")),
-            y=alt.Y("Jumlah Site:Q", title="Jumlah Site"),
-            tooltip=["Label Progress", "Jumlah Site"]
-        ).properties(height=240)
-        st.altair_chart(chart, use_container_width=True)
-
-    # --- 4. KARTU CATATAN STATUS OTOMATIS (DONE / PROGRESS / PLAN) ---
-    st.markdown("##### 📌 Daftar Site & Status Progres Tahapan")
-    col1, col2, col3 = st.columns(3)
+    # --- 2. PROGRESS BAR ---
+    st.markdown(f"##### 🎯 Progress Penyelesaian {nama_sow}: **{pct}%**")
+    st.progress(pct / 100.0)
     
-    with col1:
-        items_html = ""
-        if not done_sites.empty:
-            for _, row in done_sites.iterrows():
-                s_id = str(row.get(col_site_id, "")).strip()
-                s_name = str(row.get(col_site_name, "")).strip()
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}<span class='site-detail'>↳ 100% Selesai ({len(kolom_valid)}/{len(kolom_valid)} Tahapan)</span></div>"
-        else:
-            items_html = "<div class='site-item'><i>Belum ada site 100% selesai.</i></div>"
-        st.markdown(f'<div class="card-done"><div class="card-title" style="color: #34D399;">🟢 DONE ({len(done_sites)} Site)</div>{items_html}</div>', unsafe_allow_html=True)
-
-    with col2:
-        items_html = ""
-        if not prog_sites.empty:
-            for _, row in prog_sites.iterrows():
-                s_id = str(row.get(col_site_id, "")).strip()
-                s_name = str(row.get(col_site_name, "")).strip()
-                p_pct = row["_Progress_Pct"]
-                p_done = row["_Step_Done"]
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}<span class='site-detail'>↳ Progress: <b>{p_pct}%</b> ({p_done}/{len(kolom_valid)} Tahapan Terisi)</span></div>"
-        else:
-            items_html = "<div class='site-item'><i>Belum ada site dalam progress.</i></div>"
-        st.markdown(f'<div class="card-progress"><div class="card-title" style="color: #FBBF24;">🟡 PROGRESS ({len(prog_sites)} Site)</div>{items_html}</div>', unsafe_allow_html=True)
-
-    with col3:
-        items_html = ""
-        if not plan_sites.empty:
-            for _, row in plan_sites.iterrows():
-                s_id = str(row.get(col_site_id, "")).strip()
-                s_name = str(row.get(col_site_name, "")).strip()
-                items_html += f"<div class='site-item'>• <b>{s_id}</b> — {s_name}<span class='site-detail'>↳ 0% (Belum ada tahapan terisi)</span></div>"
-        else:
-            items_html = "<div class='site-item'><i>Belum ada site berstatus plan.</i></div>"
-        st.markdown(f'<div class="card-plan"><div class="card-title" style="color: #C084FC;">🟣 PLAN ({len(plan_sites)} Site)</div>{items_html}</div>', unsafe_allow_html=True)
+    # --- 3. CHECKLIST TAHAPAN PEKERJAAN ---
+    st.markdown("##### 📋 Checklist Tahapan Pekerjaan:")
+    cols_step = st.columns(2 if len(kolom_valid) <= 2 else 3)
+    for idx_col, col_name in enumerate(kolom_valid):
+        val_tgl = str(row_site.get(col_name, "")).strip()
+        with cols_step[idx_col % len(cols_step)]:
+            if is_terisi(val_tgl):
+                with st.container(border=True):
+                    st.markdown(f"✅ **{col_name}**")
+                    st.caption(f"Selesai: `{val_tgl}`")
+            else:
+                with st.container(border=True):
+                    st.markdown(f"⏳ **{col_name}**")
+                    st.caption("*Belum ada tanggal*")
+                    
+    # --- 4. KARTU RINGKASAN STATUS DI BAWAH ---
+    s_id = str(row_site.get(col_site_id, "")).strip()
+    s_name = str(row_site.get(col_site_name, "")).strip()
+    st.markdown(f"""
+    <div class="{card_class}" style="margin-top: 15px;">
+        <div class="card-title" style="color: {color_hex};">📌 Status Aktual: {status_label}</div>
+        <div class="site-detail">
+            <b>Site ID:</b> {s_id} &nbsp;|&nbsp; <b>Nama Site:</b> {s_name}<br>
+            <b>Progress {nama_sow}:</b> {sel} dari {tot} tahapan telah selesai dikerjakan ({pct}%).
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # 7. MENU UTAMA: DASHBOARD vs REALTIME EDITOR
@@ -279,13 +218,13 @@ def tampilkan_analytics_milestone(df_data, grup_kolom, nama_sow):
 menu_dash, menu_editor = st.tabs(["📈 Dashboard & Analytics", "📝 Realtime Editor"])
 
 # =============================================================================
-# MENU 1: DASHBOARD & ANALYTICS PER SOW (AUTOMATED % MILESTONES)
+# MENU 1: DASHBOARD & ANALYTICS PER SOW (MANDATORY SINGLE-SITE VIEW)
 # =============================================================================
 with menu_dash:
     st.subheader("📊 Dashboard Analytics per Scope of Work (SOW)")
     
-    # --- SEARCH & FILTER BERDASARKAN SITE ID ---
-    daftar_site_dash = ["Semua Site ID"]
+    # --- SEARCH & FILTER WAJIB PILIH 1 SITE ID (TANPA 'SEMUA SITE') ---
+    daftar_site_dash = []
     for _, row in df.iterrows():
         val_id = str(row.get(col_site_id, "")).strip()
         val_name = str(row.get(col_site_name, "")).strip()
@@ -293,16 +232,22 @@ with menu_dash:
             daftar_site_dash.append(f"{val_id} — {val_name}")
             
     pilih_site_dash = st.selectbox(
-        "🔍 Cari & Filter berdasarkan Site ID (Ketik untuk mencari):",
+        "🔍 Cari & Pilih Site ID untuk melihat Dashboard (Ketik untuk mencari):",
         options=daftar_site_dash,
+        index=None,  # Default kosong agar user wajib memilih
+        placeholder="-- Pilih atau ketik Site ID di sini --",
         key="filter_site_dash"
     )
     
-    if pilih_site_dash == "Semua Site ID":
-        df_filter = df
-    else:
-        id_terpilih = pilih_site_dash.split(" — ")[0].strip()
-        df_filter = df[df[col_site_id].astype(str).str.strip() == id_terpilih]
+    # JIKA USER BELUM MEMILIH SITE, TAMPILKAN INFO DAN HENTIKAN RENDER
+    if not pilih_site_dash:
+        st.info("👈 Silakan pilih atau ketik **Site ID** pada kotak di atas terlebih dahulu untuk menampilkan data Dashboard & Checklist.")
+        st.stop()
+
+    # Ambil data 1 baris untuk site yang dipilih
+    id_terpilih = pilih_site_dash.split(" — ")[0].strip()
+    df_filter = df[df[col_site_id].astype(str).str.strip() == id_terpilih]
+    row_terpilih = df_filter.iloc[0]
 
     st.divider()
     
@@ -318,15 +263,15 @@ with menu_dash:
     
     with dash_tower:
         st.markdown("#### 📈 Analytics: Dismantle Tower")
-        tampilkan_analytics_milestone(df_filter, grup_tower_cols, "Dismantle Tower")
+        tampilkan_analytics_milestone_single_site(row_terpilih, grup_tower_cols, "Dismantle Tower")
             
     with dash_equip:
         st.markdown("#### 📈 Analytics: Dismantle Equipment")
-        tampilkan_analytics_milestone(df_filter, grup_equip_cols, "Dismantle Equipment")
+        tampilkan_analytics_milestone_single_site(row_terpilih, grup_equip_cols, "Dismantle Equipment")
             
     with dash_reloc:
         st.markdown("#### 📈 Analytics: Site Relocation")
-        tampilkan_analytics_milestone(df_filter, grup_reloc_cols, "Relocation")
+        tampilkan_analytics_milestone_single_site(row_terpilih, grup_reloc_cols, "Relocation")
 
 # =============================================================================
 # MENU 2: REALTIME EDITOR (GATE 1 & GATE 2)
