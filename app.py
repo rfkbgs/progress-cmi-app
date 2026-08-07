@@ -270,7 +270,6 @@ with menu_dash:
     
     grup_tower_cols = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
     grup_equip_cols = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-    # Hapus "Site Id New", "Old", "New" agar murni Relocation, Tgl, dan Remark
     grup_reloc_cols = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
     
     # --- DASHBOARD A: DISMANTLE TOWER ---
@@ -329,7 +328,7 @@ with menu_dash:
         else:
             st.info("ℹ️ Kolom 'Dismantle Equipment' belum terdeteksi.")
             
-    # --- DASHBOARD C: RELOCATION (TANPA SITE ID NEW) ---
+    # --- DASHBOARD C: RELOCATION ---
     with dash_reloc:
         st.markdown("#### 📈 Analytics: Site Relocation")
         r1, r2, r3 = st.columns(3)
@@ -400,6 +399,7 @@ with menu_editor:
         "🛠️ SOW (Scope of Work) — [EDITABLE]"
     ])
 
+    # Kunci setiap input ditambahkan '_{idx_site}' agar mereset nilai saat site diganti
     with tab1:
         st.markdown("### 🏢 Detail Information *(Locked / Read-Only)*")
         st.caption("Informasi teknis dan administratif site ini dilock untuk menjaga keaslian data.")
@@ -410,7 +410,7 @@ with menu_editor:
             label_col = nama_col_asli if nama_col_asli else kunci
             nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
             with cols[i % 3]:
-                st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_detail_{i}")
+                st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_detail_{idx_site}_{i}")
 
     with tab2:
         st.markdown("### 📑 Permit *(Locked / Read-Only)*")
@@ -424,7 +424,7 @@ with menu_editor:
                 ditemukan = True
                 nilai_tampil = str(data_site[nama_col_asli]) if pd.notna(data_site[nama_col_asli]) else "-"
                 with cols[i % 2]:
-                    st.text_input(label=nama_col_asli, value=nilai_tampil, disabled=True, key=f"lock_permit_{i}")
+                    st.text_input(label=nama_col_asli, value=nilai_tampil, disabled=True, key=f"lock_permit_{idx_site}_{i}")
         if not ditemukan:
             st.info("ℹ️ Kolom terkait 'Permit' atau 'Start-End' tidak terdeteksi pada tabel.")
 
@@ -438,7 +438,7 @@ with menu_editor:
             label_col = nama_col_asli if nama_col_asli else kunci
             nilai_tampil = str(data_site[nama_col_asli]) if (nama_col_asli and pd.notna(data_site[nama_col_asli])) else "-"
             with cols[i % 3]:
-                st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_hse_{i}")
+                st.text_input(label=label_col, value=nilai_tampil, disabled=True, key=f"lock_hse_{idx_site}_{i}")
 
     with tab4:
         st.markdown("### 🛠️ SOW (Scope of Work) — Edit Detail Lapisan Pekerjaan")
@@ -446,7 +446,6 @@ with menu_editor:
         
         grup_tower = cari_kolom_grup(["Dismantle Tower", "Tgl Dismantle Tower", "Remark Dismantle Tower", "Tanggal Tower", "Remark Tower"])
         grup_equipment = cari_kolom_grup(["Dismantle Equipment", "Equipment", "Perangkat", "Tgl Dismantle Equipment", "Remark Dismantle Equipment"])
-        # Hapus "Site Id New", "Old", "New" agar murni Relocation, Tgl, dan Remark
         grup_relocation = cari_kolom_grup(["Relocation", "Reloc", "Alamat", "Tgl Relocation", "Remark Relocation"])
         
         semua_kolom_sow = list(dict.fromkeys(grup_tower + grup_equipment + grup_relocation))
@@ -464,7 +463,7 @@ with menu_editor:
                         for i, col_name in enumerate(grup_tower):
                             val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
                             with cols_t[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_tower_{i}")
+                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_tower_{idx_site}_{i}")
                     else:
                         st.info("ℹ️ Belum ada kolom khusus 'Dismantle Tower' yang terdeteksi.")
                 
@@ -475,7 +474,7 @@ with menu_editor:
                         for i, col_name in enumerate(grup_equipment):
                             val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
                             with cols_e[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_equip_{i}")
+                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_equip_{idx_site}_{i}")
                     else:
                         st.info("ℹ️ Belum ada kolom khusus 'Dismantle Equipment' yang terdeteksi.")
                 
@@ -486,7 +485,7 @@ with menu_editor:
                         for i, col_name in enumerate(grup_relocation):
                             val_lama = "" if pd.isna(data_site[col_name]) else str(data_site[col_name])
                             with cols_r[i % 3]:
-                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_reloc_{i}")
+                                input_progress_baru[col_name] = st.text_input(label=f"🔄 {col_name}", value=val_lama, key=f"edit_reloc_{idx_site}_{i}")
                     else:
                         st.info("ℹ️ Belum ada kolom khusus 'Relocation' yang terdeteksi.")
                 
